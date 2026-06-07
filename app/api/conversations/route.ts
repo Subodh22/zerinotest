@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { coerceArray } from "@/src/zernio";
 import { getClient, errorResponse } from "@/lib/zernio-server";
+import { getGmailClient } from "@/lib/gmail-server";
+import { getHeader } from "@/src/gmail";
+import type { GmailMessage } from "@/src/gmail";
+import type { Conversation } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -8,19 +12,70 @@ type Platform = "facebook" | "instagram" | "twitter" | "bluesky" | "reddit" | "t
 
 export async function GET(req: Request) {
   try {
-    const z = getClient();
     const { searchParams } = new URL(req.url);
-    const platform = searchParams.get("platform") as Platform | null;
+    const platform = searchParams.get("platform");
 
-    const res = (await z.listConversations({
-      limit: 50,
-      ...(platform ? { platform } : {}),
-    })) as { data?: unknown[]; meta?: unknown };
+    const results: Conversation[] = [];
+    let meta: unknown = null;
 
-    return NextResponse.json({
-      data: res?.data ?? coerceArray(res),
-      meta: res?.meta ?? null,
+    // Zernio conversations (skip if filtering to google only)
+    if (platform !== "google") {
+      const z = getClient();
+      const res = (await z.listConversations({
+        limit: 50,
+        ...(platform ? { platform: platform as Platform } : {}),
+      })) as { data?: unknown[]; meta?: unknown };
+      const zConvs = (res?.data ?? coerceArray(res)) as Conversation[];
+      results.push(...zConvs);
+      meta = res?.meta ?? null;
+    }
+
+    // Gmail threads (skip if filtering to a non-google platform)
+    if (!platform || platform === "google") {
+      const gmail = getGmailClient();
+      if (gmail) {
+        try {
+          const profile = await gmail.getProfile();
+          const accountId = `gmail:${profile.emailAddress}`;
+          const threadsRes = await gmail.listThreads({ maxResults: 30, q: "in:inbox" });
+          if (threadsRes.threads) {
+            const threadDetails = await Promise.all(
+              threadsRes.threads.map((t) => gmail.getThread(t.id, "metadata")),
+            );
+            for (const thread of threadDetails) {
+              const firstMsg = thread.messages[0];
+              const lastMsg = thread.messages[thread.messages.length - 1];
+              const from = getHeader(firstMsg, "From") ?? "";
+              const subject = getHeader(firstMsg, "Subject") ?? "(no subject)";
+              const nameMatch = from.match(/^(.+?)\s*<(.+)>$/);
+              const participantName = nameMatch ? nameMatch[1].replace(/^"|"$/g, "") : from;
+
+              results.push({
+                id: `gmail:${thread.id}`,
+                platform: "google",
+                accountId,
+                participantName,
+                lastMessage: subject,
+                updatedTime: new Date(Number(lastMsg.internalDate)).toISOString(),
+                status: "active",
+                unreadCount: thread.messages.some((m: GmailMessage) => m.labelIds?.includes("UNREAD")) ? 1 : null,
+              });
+            }
+          }
+        } catch {
+          // Gmail not ready — skip
+        }
+      }
+    }
+
+    // Sort by most recent first
+    results.sort((a, b) => {
+      const ta = a.updatedTime ? new Date(a.updatedTime).getTime() : 0;
+      const tb = b.updatedTime ? new Date(b.updatedTime).getTime() : 0;
+      return tb - ta;
     });
+
+    return NextResponse.json({ data: results, meta });
   } catch (e) {
     return errorResponse(e);
   }

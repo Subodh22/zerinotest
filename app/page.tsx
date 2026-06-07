@@ -19,6 +19,8 @@ const PLATFORM: Record<string, { emoji: string; label: string; dot: string }> = 
   bluesky: { emoji: "🦋", label: "Bluesky", dot: "bg-sky-400" },
   whatsapp: { emoji: "🟢", label: "WhatsApp", dot: "bg-green-500" },
   linkedin: { emoji: "💼", label: "LinkedIn", dot: "bg-blue-700" },
+  google: { emoji: "📧", label: "Gmail", dot: "bg-red-500" },
+  slack: { emoji: "💬", label: "Slack", dot: "bg-purple-600" },
 };
 const platform = (p?: string) =>
   PLATFORM[p ?? ""] ?? { emoji: "💠", label: p ?? "Unknown", dot: "bg-neutral-400" };
