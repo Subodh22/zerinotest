@@ -47,7 +47,7 @@ function clockTime(iso?: string): string {
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
 async function getJSON<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+  const res = await fetch(url, { cache: "no-store" });
   const json = await res.json();
   if (!res.ok) throw new Error(json?.error || `Request failed (${res.status})`);
   return json as T;
@@ -68,19 +68,30 @@ export default function Home() {
   const [filter, setFilter] = useState("");
   const threadEndRef = useRef<HTMLDivElement>(null);
 
+  // Fetch conversations (reused for initial load + polling).
+  const refreshConversations = useRef(async () => {
+    try {
+      const conv = await getJSON<{ data: Conversation[]; meta: ConversationsMeta | null }>(
+        "/api/conversations",
+      );
+      setConversations(conv.data ?? []);
+      setMeta(conv.meta ?? null);
+      setListError(null);
+    } catch (e) {
+      setListError((e as Error).message);
+    }
+  });
+
   // Initial load: accounts + conversations + analytics in parallel.
   useEffect(() => {
     (async () => {
       setLoadingList(true);
       try {
-        const [acc, conv] = await Promise.all([
+        const [acc] = await Promise.all([
           getJSON<{ accounts: Account[] }>("/api/accounts"),
-          getJSON<{ data: Conversation[]; meta: ConversationsMeta | null }>("/api/conversations"),
+          refreshConversations.current(),
         ]);
         setAccounts(acc.accounts ?? []);
-        setConversations(conv.data ?? []);
-        setMeta(conv.meta ?? null);
-        setListError(null);
       } catch (e) {
         setListError((e as Error).message);
       } finally {
@@ -96,6 +107,20 @@ export default function Home() {
     })();
   }, []);
 
+  // Poll conversation list every 10 seconds for new incoming messages.
+  useEffect(() => {
+    const id = setInterval(() => refreshConversations.current(), 10_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Fetch messages for a conversation (reused for load + polling).
+  const fetchMessages = async (c: Conversation) => {
+    const res = await getJSON<{ data: Message[] }>(
+      `/api/messages/${encodeURIComponent(c.id)}?accountId=${encodeURIComponent(c.accountId)}`,
+    );
+    return res.data ?? [];
+  };
+
   // Load a thread when a conversation is selected.
   async function openConversation(c: Conversation) {
     setSelected(c);
@@ -103,10 +128,7 @@ export default function Home() {
     setDraft("");
     setLoadingThread(true);
     try {
-      const res = await getJSON<{ data: Message[] }>(
-        `/api/messages/${encodeURIComponent(c.id)}?accountId=${encodeURIComponent(c.accountId)}`,
-      );
-      setMessages(res.data ?? []);
+      setMessages(await fetchMessages(c));
     } catch (e) {
       setMessages([]);
       setListError((e as Error).message);
@@ -114,6 +136,23 @@ export default function Home() {
       setLoadingThread(false);
     }
   }
+
+  // Poll the active thread every 5 seconds for new incoming messages.
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  useEffect(() => {
+    if (!selected) return;
+    const id = setInterval(async () => {
+      const cur = selectedRef.current;
+      if (!cur) return;
+      try {
+        setMessages(await fetchMessages(cur));
+      } catch {
+        /* swallow polling errors silently */
+      }
+    }, 5_000);
+    return () => clearInterval(id);
+  }, [selected]);
 
   async function sendReply() {
     if (!selected || !draft.trim()) return;
