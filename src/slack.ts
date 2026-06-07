@@ -65,17 +65,39 @@ export class SlackClient {
     });
   }
 
-  /** Get message history for a conversation. */
+  /** Join a channel (public channels only). */
+  async joinConversation(channel: string) {
+    return this.request("conversations.join", { channel });
+  }
+
+  /** Get message history for a conversation. Auto-joins public channels if needed. */
   async conversationHistory(channel: string, params: { limit?: number; cursor?: string } = {}) {
-    return this.request<{
-      messages: SlackMessage[];
-      has_more?: boolean;
-      response_metadata?: { next_cursor?: string };
-    }>("conversations.history", {
-      channel,
-      limit: params.limit ?? 50,
-      cursor: params.cursor,
-    });
+    try {
+      return await this.request<{
+        messages: SlackMessage[];
+        has_more?: boolean;
+        response_metadata?: { next_cursor?: string };
+      }>("conversations.history", {
+        channel,
+        limit: params.limit ?? 50,
+        cursor: params.cursor,
+      });
+    } catch (e) {
+      // Auto-join and retry if bot isn't in the channel
+      if (e instanceof Error && e.message.includes("not_in_channel")) {
+        await this.joinConversation(channel);
+        return this.request<{
+          messages: SlackMessage[];
+          has_more?: boolean;
+          response_metadata?: { next_cursor?: string };
+        }>("conversations.history", {
+          channel,
+          limit: params.limit ?? 50,
+          cursor: params.cursor,
+        });
+      }
+      throw e;
+    }
   }
 
   /** Send a message to a channel/DM. */
