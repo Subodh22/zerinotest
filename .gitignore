@@ -10,3 +10,7 @@ dist/
 # Next.js
 .next/
 next-env.d.ts
+
+# Build / tooling artifacts
+tsconfig.tsbuildinfo
+.worktrees/
