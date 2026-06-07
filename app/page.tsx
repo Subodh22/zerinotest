@@ -203,6 +203,17 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id]);
 
+  // Fetch comments for a post (reused for initial load + polling).
+  const fetchComments = async (p: Post) => {
+    const pid = getPostId(p);
+    const aid = p.accountId;
+    if (!pid || !aid) return [];
+    const res = await getJSON<{ data: Comment[] }>(
+      `/api/comments/${encodeURIComponent(pid)}?accountId=${encodeURIComponent(aid)}`,
+    );
+    return res.data ?? [];
+  };
+
   // Open a post and load its comments.
   async function openPost(p: Post) {
     setSelectedPost(p);
@@ -214,16 +225,31 @@ export default function Home() {
     if (!pid || !aid) return;
     setLoadingComments(true);
     try {
-      const res = await getJSON<{ data: Comment[] }>(
-        `/api/comments/${encodeURIComponent(pid)}?accountId=${encodeURIComponent(aid)}`,
-      );
-      setComments(res.data ?? []);
+      setComments(await fetchComments(p));
     } catch (e) {
       setPostsError((e as Error).message);
     } finally {
       setLoadingComments(false);
     }
   }
+
+  // Poll the active post's comments every 5 seconds for new comments.
+  const selectedPostRef = useRef(selectedPost);
+  selectedPostRef.current = selectedPost;
+  useEffect(() => {
+    if (!selectedPost) return;
+    const id = setInterval(async () => {
+      const cur = selectedPostRef.current;
+      if (!cur) return;
+      try {
+        setComments(await fetchComments(cur));
+      } catch {
+        /* swallow polling errors silently */
+      }
+    }, 5_000);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPost ? getPostId(selectedPost) : null]);
 
   async function sendDmReply() {
     if (!selected || !inboxDraft.trim()) return;
