@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { coerceArray } from "@/src/zernio";
 import { getClient, errorResponse } from "@/lib/zernio-server";
 import { getGmailClient } from "@/lib/gmail-server";
+import { getSlackClient } from "@/lib/slack-server";
 import { getHeader, getTextBody } from "@/src/gmail";
 import type { Message } from "@/lib/types";
 
@@ -49,6 +50,41 @@ export async function GET(req: Request, { params }: Params) {
       return NextResponse.json({ data: messages });
     }
 
+    // Slack thread
+    if (conversationId.startsWith("slack:")) {
+      const slack = getSlackClient();
+      if (!slack) {
+        return NextResponse.json({ error: "Slack not configured" }, { status: 500 });
+      }
+      const channelId = conversationId.replace("slack:", "");
+      const auth = await slack.authTest();
+      const history = await slack.conversationHistory(channelId, { limit: 100 });
+
+      // Resolve user names
+      const userIds = [...new Set(history.messages.filter((m) => m.user).map((m) => m.user!))];
+      const users = await slack.usersInfo(userIds);
+
+      const messages: Message[] = history.messages
+        .filter((m) => !m.subtype) // skip system messages
+        .reverse() // oldest first
+        .map((m) => {
+          const isOutgoing = m.user === auth.user_id;
+          const user = m.user ? users.get(m.user) : null;
+          const senderName = user?.real_name ?? user?.profile.display_name ?? user?.name ?? null;
+          return {
+            id: m.ts,
+            message: m.text,
+            senderId: m.user ?? m.bot_id ?? "",
+            senderName: isOutgoing ? null : senderName,
+            direction: isOutgoing ? "outgoing" as const : "incoming" as const,
+            createdAt: new Date(Number(m.ts) * 1000).toISOString(),
+            attachments: [],
+            deliveryStatus: null,
+          };
+        });
+      return NextResponse.json({ data: messages });
+    }
+
     // Zernio thread
     const res = await z_listMessages(conversationId, accountId);
     return NextResponse.json({ data: res });
@@ -80,6 +116,17 @@ export async function POST(req: Request, { params }: Params) {
       const messageId = getHeader(lastMsg, "Message-Id");
       const replySubject = subject.startsWith("Re:") ? subject : `Re: ${subject}`;
       const result = await gmail.sendReply(threadId, to, replySubject, body.message.trim(), messageId);
+      return NextResponse.json({ ok: true, result });
+    }
+
+    // Slack reply
+    if (conversationId.startsWith("slack:")) {
+      const slack = getSlackClient();
+      if (!slack) {
+        return NextResponse.json({ error: "Slack not configured" }, { status: 500 });
+      }
+      const channelId = conversationId.replace("slack:", "");
+      const result = await slack.postMessage(channelId, body.message.trim());
       return NextResponse.json({ ok: true, result });
     }
 

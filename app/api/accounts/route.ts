@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { coerceArray } from "@/src/zernio";
 import { getClient, errorResponse } from "@/lib/zernio-server";
 import { getGmailClient } from "@/lib/gmail-server";
+import { getSlackClient } from "@/lib/slack-server";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,22 @@ export async function GET() {
         });
       } catch {
         // Gmail not ready — skip silently
+      }
+    }
+
+    // Add Slack account if configured
+    const slack = getSlackClient();
+    if (slack) {
+      try {
+        const auth = await slack.authTest();
+        accounts.push({
+          _id: `slack:${auth.team_id}`,
+          platform: "slack",
+          displayName: `${auth.team} (Slack)`,
+          profilePicture: null,
+        });
+      } catch {
+        // Slack not ready — skip silently
       }
     }
 

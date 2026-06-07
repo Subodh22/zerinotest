@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { coerceArray } from "@/src/zernio";
 import { getClient, errorResponse } from "@/lib/zernio-server";
 import { getGmailClient } from "@/lib/gmail-server";
+import { getSlackClient } from "@/lib/slack-server";
 import { getHeader } from "@/src/gmail";
 import type { GmailMessage } from "@/src/gmail";
 import type { Conversation } from "@/lib/types";
@@ -64,6 +65,43 @@ export async function GET(req: Request) {
           }
         } catch {
           // Gmail not ready — skip
+        }
+      }
+    }
+
+    // Slack DMs (skip if filtering to a non-slack platform)
+    if (!platform || platform === "slack") {
+      const slack = getSlackClient();
+      if (slack) {
+        try {
+          const auth = await slack.authTest();
+          const accountId = `slack:${auth.team_id}`;
+          const convos = await slack.listConversations({ types: "im,mpim", limit: 30 });
+
+          // Collect unique user IDs to resolve names
+          const userIds = convos.channels
+            .filter((ch) => ch.is_im && ch.user)
+            .map((ch) => ch.user!);
+          const users = await slack.usersInfo(userIds);
+
+          for (const ch of convos.channels) {
+            const user = ch.user ? users.get(ch.user) : null;
+            const participantName = user?.real_name ?? user?.profile.display_name ?? user?.name ?? ch.name ?? "Unknown";
+            const lastTs = ch.latest?.ts ? Number(ch.latest.ts) * 1000 : (ch.updated ?? 0) * 1000;
+
+            results.push({
+              id: `slack:${ch.id}`,
+              platform: "slack",
+              accountId,
+              participantName,
+              lastMessage: ch.latest?.text ?? "",
+              updatedTime: lastTs ? new Date(lastTs).toISOString() : undefined,
+              status: "active",
+              unreadCount: null,
+            });
+          }
+        } catch {
+          // Slack not ready — skip
         }
       }
     }
