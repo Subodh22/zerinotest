@@ -4,14 +4,13 @@ import { getClient, errorResponse } from "@/lib/zernio-server";
 import { getGmailClient } from "@/lib/gmail-server";
 import { getSlackClient } from "@/lib/slack-server";
 import { getOutlookClient } from "@/lib/outlook-server";
-import { getLinkedInClient } from "@/lib/linkedin-server";
 import { getHeader } from "@/src/gmail";
 import type { GmailMessage } from "@/src/gmail";
 import type { Conversation } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-type Platform = "facebook" | "instagram" | "twitter" | "bluesky" | "reddit" | "telegram";
+type Platform = "facebook" | "instagram" | "twitter" | "bluesky" | "reddit" | "telegram" | "linkedin";
 
 // Unified conversation list, merged and sorted across every connected source.
 export async function GET(req: Request) {
@@ -144,32 +143,6 @@ export async function GET(req: Request) {
           }
         } catch (outlookErr) {
           console.error("Outlook conversations error:", outlookErr);
-        }
-      }
-    }
-
-    // LinkedIn messages (skip if filtering to a non-linkedin platform)
-    if (!platform || platform === "linkedin") {
-      const linkedin = getLinkedInClient();
-      if (linkedin) {
-        try {
-          const profile = await linkedin.getProfile();
-          const accountId = `linkedin:${profile.emailAddress}`;
-          const convos = await linkedin.listConversations(30);
-          for (const c of convos) {
-            results.push({
-              id: `linkedin:${c.conversationId}`,
-              platform: "linkedin",
-              accountId,
-              participantName: c.participantName,
-              lastMessage: c.preview,
-              updatedTime: c.updatedTime,
-              status: "active",
-              unreadCount: c.unread || null,
-            });
-          }
-        } catch (linkedinErr) {
-          console.error("LinkedIn conversations error:", linkedinErr);
         }
       }
     }

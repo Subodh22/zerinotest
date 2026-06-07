@@ -4,7 +4,6 @@ import { getClient, errorResponse } from "@/lib/zernio-server";
 import { getGmailClient } from "@/lib/gmail-server";
 import { getSlackClient } from "@/lib/slack-server";
 import { getOutlookClient } from "@/lib/outlook-server";
-import { getLinkedInClient } from "@/lib/linkedin-server";
 import { getHeader, getTextBody } from "@/src/gmail";
 import type { Message } from "@/lib/types";
 
@@ -108,28 +107,7 @@ export async function GET(req: Request, { params }: Params) {
       return NextResponse.json({ data: messages });
     }
 
-    // LinkedIn thread
-    if (conversationId.startsWith("linkedin:")) {
-      const linkedin = getLinkedInClient();
-      if (!linkedin) {
-        return NextResponse.json({ error: "LinkedIn not configured" }, { status: 500 });
-      }
-      const threadId = conversationId.replace("linkedin:", "");
-      const thread = await linkedin.listThreadMessages(threadId);
-      const messages: Message[] = thread.map((m) => ({
-        id: m.id,
-        message: m.body,
-        senderId: undefined,
-        senderName: m.fromMe ? null : m.fromName,
-        direction: m.fromMe ? "outgoing" : "incoming",
-        createdAt: m.createdAt,
-        attachments: [],
-        deliveryStatus: null,
-      }));
-      return NextResponse.json({ data: messages });
-    }
-
-    // Zernio thread
+    // Zernio thread (includes LinkedIn and other DM platforms)
     const res = await z_listMessages(conversationId, accountId);
     return NextResponse.json({ data: res });
   } catch (e) {
@@ -185,18 +163,7 @@ export async function POST(req: Request, { params }: Params) {
       return NextResponse.json({ ok: true, result });
     }
 
-    // LinkedIn reply
-    if (conversationId.startsWith("linkedin:")) {
-      const linkedin = getLinkedInClient();
-      if (!linkedin) {
-        return NextResponse.json({ error: "LinkedIn not configured" }, { status: 500 });
-      }
-      const threadId = conversationId.replace("linkedin:", "");
-      const result = await linkedin.reply(threadId, body.message.trim());
-      return NextResponse.json({ ok: true, result });
-    }
-
-    // Zernio reply
+    // Zernio reply (includes LinkedIn and other DM platforms)
     const z = getClient();
     const result = await z.sendMessage(conversationId, body.accountId, body.message.trim());
     return NextResponse.json({ ok: true, result });

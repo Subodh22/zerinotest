@@ -87,7 +87,7 @@ export class ZernioClient {
    */
   listConversations(
     params: {
-      platform?: "facebook" | "instagram" | "twitter" | "bluesky" | "reddit" | "telegram";
+      platform?: "facebook" | "instagram" | "twitter" | "bluesky" | "reddit" | "telegram" | "linkedin";
       profileId?: string;
       accountId?: string;
       status?: "active" | "archived";
