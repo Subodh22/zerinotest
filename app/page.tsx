@@ -68,6 +68,7 @@ export default function Home() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [filter, setFilter] = useState("");
+  const [platformFilter, setPlatformFilter] = useState<string | null>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
 
   // Fetch conversations (reused for initial load + polling).
@@ -182,15 +183,30 @@ export default function Home() {
   }, [messages]);
 
   const filtered = useMemo(() => {
+    let result = conversations;
+    if (platformFilter) {
+      result = result.filter((c) => c.platform === platformFilter);
+    }
     const q = filter.trim().toLowerCase();
-    if (!q) return conversations;
-    return conversations.filter(
-      (c) =>
-        (c.participantName ?? "").toLowerCase().includes(q) ||
-        (c.lastMessage ?? "").toLowerCase().includes(q) ||
-        (c.platform ?? "").toLowerCase().includes(q),
-    );
-  }, [conversations, filter]);
+    if (q) {
+      result = result.filter(
+        (c) =>
+          (c.participantName ?? "").toLowerCase().includes(q) ||
+          (c.lastMessage ?? "").toLowerCase().includes(q) ||
+          (c.platform ?? "").toLowerCase().includes(q),
+      );
+    }
+    return result;
+  }, [conversations, filter, platformFilter]);
+
+  // Derive unique platforms from conversations for the filter pills.
+  const availablePlatforms = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of conversations) {
+      if (c.platform) set.add(c.platform);
+    }
+    return Array.from(set).sort();
+  }, [conversations]);
 
   const totalUnread = conversations.reduce((n, c) => n + (c.unreadCount ?? 0), 0);
 
@@ -253,6 +269,38 @@ export default function Home() {
               placeholder="Search conversations…"
               className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm outline-none placeholder:text-neutral-400 focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100"
             />
+            {availablePlatforms.length > 1 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <button
+                  onClick={() => setPlatformFilter(null)}
+                  className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium transition ${
+                    platformFilter === null
+                      ? "bg-brand-600 text-white shadow-sm"
+                      : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                  }`}
+                >
+                  All
+                </button>
+                {availablePlatforms.map((p) => {
+                  const info = platform(p);
+                  const active = platformFilter === p;
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => setPlatformFilter(active ? null : p)}
+                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition ${
+                        active
+                          ? "bg-brand-600 text-white shadow-sm"
+                          : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                      }`}
+                    >
+                      <span>{info.emoji}</span>
+                      <span>{info.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Failed-account warning (e.g. Instagram permission/timeout) */}

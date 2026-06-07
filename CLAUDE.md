@@ -13,5 +13,5 @@ Kinso-clone unified inbox built on the Zernio API using Next.js (App Router).
 ## Conventions
 
 - Use conventional commits
-- Run tests before pushing
+- Run tests/lint before pushing
 - Focus on files relevant to the task
