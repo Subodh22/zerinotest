@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 
 type Platform = "facebook" | "instagram" | "twitter" | "bluesky" | "reddit" | "telegram";
 
+// Unified conversation list, merged and sorted across every connected source.
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -59,7 +60,11 @@ export async function GET(req: Request) {
                 lastMessage: subject,
                 updatedTime: new Date(Number(lastMsg.internalDate)).toISOString(),
                 status: "active",
-                unreadCount: thread.messages.some((m: GmailMessage) => m.labelIds?.includes("UNREAD")) ? 1 : null,
+                unreadCount: thread.messages.some((m: GmailMessage) =>
+                  m.labelIds?.includes("UNREAD"),
+                )
+                  ? 1
+                  : null,
               });
             }
           }
@@ -76,9 +81,11 @@ export async function GET(req: Request) {
         try {
           const auth = await slack.authTest();
           const accountId = `slack:${auth.team_id}`;
-          const convos = await slack.listConversations({ types: "public_channel,private_channel,im,mpim", limit: 30 });
+          const convos = await slack.listConversations({
+            types: "public_channel,private_channel,im,mpim",
+            limit: 30,
+          });
 
-          // Collect unique user IDs to resolve names for DMs
           const userIds = convos.channels
             .filter((ch) => ch.is_im && ch.user)
             .map((ch) => ch.user!);
@@ -88,8 +95,12 @@ export async function GET(req: Request) {
             const user = ch.user ? users.get(ch.user) : null;
             const participantName = ch.is_im
               ? (user?.real_name ?? user?.profile.display_name ?? user?.name ?? "Unknown")
-              : (ch.name ? `#${ch.name}` : "Unknown channel");
-            const lastTs = ch.latest?.ts ? Number(ch.latest.ts) * 1000 : (ch.updated ?? 0) * 1000;
+              : ch.name
+                ? `#${ch.name}`
+                : "Unknown channel";
+            const lastTs = ch.latest?.ts
+              ? Number(ch.latest.ts) * 1000
+              : (ch.updated ?? 0) * 1000;
 
             results.push({
               id: `slack:${ch.id}`,

@@ -4,12 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   Account,
   AnalyticsOverview,
+  Comment,
   Conversation,
   ConversationsMeta,
   Message,
+  Post,
 } from "@/lib/types";
 
-// ── Platform presentation ───────────────────────────────────────────────────
+// ── Platform presentation ────────────────────────────────────────────────────
 const PLATFORM: Record<string, { emoji: string; label: string; dot: string }> = {
   instagram: { emoji: "📸", label: "Instagram", dot: "bg-pink-500" },
   facebook: { emoji: "💬", label: "Messenger", dot: "bg-blue-600" },
@@ -19,6 +21,7 @@ const PLATFORM: Record<string, { emoji: string; label: string; dot: string }> = 
   bluesky: { emoji: "🦋", label: "Bluesky", dot: "bg-sky-400" },
   whatsapp: { emoji: "🟢", label: "WhatsApp", dot: "bg-green-500" },
   linkedin: { emoji: "💼", label: "LinkedIn", dot: "bg-blue-700" },
+  outlook: { emoji: "✉️", label: "Outlook", dot: "bg-blue-500" },
   google: { emoji: "📧", label: "Gmail", dot: "bg-red-500" },
   slack: { emoji: "💬", label: "Slack", dot: "bg-purple-600" },
 };
@@ -47,7 +50,7 @@ function clockTime(iso?: string): string {
   return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
-// ── Data fetching ─────────────────────────────────────────────────────────────
+// ── Fetch helper ──────────────────────────────────────────────────────────────
 async function getJSON<T>(url: string): Promise<T> {
   const res = await fetch(url, { cache: "no-store" });
   const json = await res.json();
@@ -55,7 +58,20 @@ async function getJSON<T>(url: string): Promise<T> {
   return json as T;
 }
 
+// ── Post / comment field normalizers ─────────────────────────────────────────
+const getPostId = (p: Post) => (p._id ?? p.id ?? p.postId ?? "") as string;
+const getPostCaption = (p: Post) => p.caption ?? p.content ?? p.message ?? "";
+const getPostTime = (p: Post) => p.publishedAt ?? p.createdAt;
+const getCommentId = (c: Comment) => (c._id ?? c.id ?? "") as string;
+const getCommentText = (c: Comment) => c.message ?? c.text ?? c.body ?? "";
+const getCommentSender = (c: Comment) => c.senderName ?? c.from ?? c.username ?? "";
+
+type Tab = "inbox" | "posts";
+
 export default function Home() {
+  const [tab, setTab] = useState<Tab>("inbox");
+
+  // ── Inbox state ──────────────────────────────────────────────────────────
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [meta, setMeta] = useState<ConversationsMeta | null>(null);
@@ -65,13 +81,28 @@ export default function Home() {
   const [loadingList, setLoadingList] = useState(true);
   const [loadingThread, setLoadingThread] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
+  const [inboxDraft, setInboxDraft] = useState("");
+  const [sendingDm, setSendingDm] = useState(false);
   const [filter, setFilter] = useState("");
   const [platformFilter, setPlatformFilter] = useState<string | null>(null);
-  const threadEndRef = useRef<HTMLDivElement>(null);
+  const [outlook, setOutlook] = useState<{ configured: boolean; connected: boolean } | null>(null);
 
-  // Fetch conversations (reused for initial load + polling).
+  // ── Posts / comments state ────────────────────────────────────────────────
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loadingPosts, setLoadingPosts] = useState(false);
+  const [postsError, setPostsError] = useState<string | null>(null);
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [sendingComment, setSendingComment] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<Comment | null>(null);
+  const [postFilter, setPostFilter] = useState("");
+
+  const threadEndRef = useRef<HTMLDivElement>(null);
+  const commentEndRef = useRef<HTMLDivElement>(null);
+
+  // Stable ref so polling effects can call the latest version without re-registering.
   const refreshConversations = useRef(async () => {
     try {
       const conv = await getJSON<{ data: Conversation[]; meta: ConversationsMeta | null }>(
@@ -100,12 +131,11 @@ export default function Home() {
       } finally {
         setLoadingList(false);
       }
-      // Analytics is non-critical; load it separately so a failure doesn't block the inbox.
       try {
         const a = await getJSON<{ overview: AnalyticsOverview | null }>("/api/analytics");
         setOverview(a.overview);
       } catch {
-        /* ignore */
+        /* non-critical */
       }
     })();
   }, []);
@@ -116,7 +146,38 @@ export default function Home() {
     return () => clearInterval(id);
   }, []);
 
-  // Fetch messages for a conversation (reused for load + polling).
+  // Outlook connection status + post-OAuth feedback.
+  useEffect(() => {
+    getJSON<{ configured: boolean; connected: boolean }>("/api/auth/outlook")
+      .then(setOutlook)
+      .catch(() => setOutlook(null));
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("outlook") === "error") {
+      setListError(`Outlook: ${params.get("reason") || "connection failed"}`);
+    }
+    if (params.get("outlook")) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
+  // Lazy-load posts the first time the Posts tab is opened.
+  useEffect(() => {
+    if (tab !== "posts" || posts.length > 0) return;
+    (async () => {
+      setLoadingPosts(true);
+      setPostsError(null);
+      try {
+        const res = await getJSON<{ data: Post[] }>("/api/posts");
+        setPosts(res.data ?? []);
+      } catch (e) {
+        setPostsError((e as Error).message);
+      } finally {
+        setLoadingPosts(false);
+      }
+    })();
+  }, [tab, posts.length]);
+
+  // Fetch messages for a conversation (reused for initial load + polling).
   const fetchMessages = async (c: Conversation) => {
     const res = await getJSON<{ data: Message[] }>(
       `/api/messages/${encodeURIComponent(c.id)}?accountId=${encodeURIComponent(c.accountId)}`,
@@ -124,16 +185,15 @@ export default function Home() {
     return res.data ?? [];
   };
 
-  // Load a thread when a conversation is selected.
+  // Open a DM conversation and load its messages.
   async function openConversation(c: Conversation) {
     setSelected(c);
     setMessages([]);
-    setDraft("");
+    setInboxDraft("");
     setLoadingThread(true);
     try {
       setMessages(await fetchMessages(c));
     } catch (e) {
-      setMessages([]);
       setListError((e as Error).message);
     } finally {
       setLoadingThread(false);
@@ -155,32 +215,83 @@ export default function Home() {
       }
     }, 5_000);
     return () => clearInterval(id);
-  }, [selected]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id]);
 
-  async function sendReply() {
-    if (!selected || !draft.trim()) return;
-    setSending(true);
+  // Open a post and load its comments.
+  async function openPost(p: Post) {
+    setSelectedPost(p);
+    setComments([]);
+    setCommentDraft("");
+    setReplyingTo(null);
+    const pid = getPostId(p);
+    const aid = p.accountId;
+    if (!pid || !aid) return;
+    setLoadingComments(true);
     try {
-      await fetch(`/api/messages/${encodeURIComponent(selected.id)}`, {
+      const res = await getJSON<{ data: Comment[] }>(
+        `/api/comments/${encodeURIComponent(pid)}?accountId=${encodeURIComponent(aid)}`,
+      );
+      setComments(res.data ?? []);
+    } catch (e) {
+      setPostsError((e as Error).message);
+    } finally {
+      setLoadingComments(false);
+    }
+  }
+
+  async function sendDmReply() {
+    if (!selected || !inboxDraft.trim()) return;
+    setSendingDm(true);
+    try {
+      const r = await fetch(`/api/messages/${encodeURIComponent(selected.id)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId: selected.accountId, message: draft.trim() }),
-      }).then(async (r) => {
-        const j = await r.json();
-        if (!r.ok) throw new Error(j?.error || "Send failed");
+        body: JSON.stringify({ accountId: selected.accountId, message: inboxDraft.trim() }),
       });
-      setDraft("");
-      await openConversation(selected); // refresh thread
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || "Send failed");
+      setInboxDraft("");
+      await openConversation(selected);
     } catch (e) {
       alert("Couldn't send: " + (e as Error).message);
     } finally {
-      setSending(false);
+      setSendingDm(false);
+    }
+  }
+
+  async function sendCommentReply() {
+    if (!selectedPost || !commentDraft.trim()) return;
+    const pid = getPostId(selectedPost);
+    const aid = selectedPost.accountId;
+    if (!pid || !aid) return;
+    setSendingComment(true);
+    try {
+      const commentId = replyingTo ? getCommentId(replyingTo) : undefined;
+      const r = await fetch(`/api/comments/${encodeURIComponent(pid)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId: aid, message: commentDraft.trim(), commentId }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || "Send failed");
+      setCommentDraft("");
+      setReplyingTo(null);
+      await openPost(selectedPost);
+    } catch (e) {
+      alert("Couldn't send: " + (e as Error).message);
+    } finally {
+      setSendingComment(false);
     }
   }
 
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    commentEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [comments]);
 
   const filtered = useMemo(() => {
     let result = conversations;
@@ -199,7 +310,6 @@ export default function Home() {
     return result;
   }, [conversations, filter, platformFilter]);
 
-  // Derive unique platforms from conversations for the filter pills.
   const availablePlatforms = useMemo(() => {
     const set = new Set<string>();
     for (const c of conversations) {
@@ -207,6 +317,16 @@ export default function Home() {
     }
     return Array.from(set).sort();
   }, [conversations]);
+
+  const filteredPosts = useMemo(() => {
+    const q = postFilter.trim().toLowerCase();
+    if (!q) return posts;
+    return posts.filter(
+      (p) =>
+        getPostCaption(p).toLowerCase().includes(q) ||
+        (p.platform ?? "").toLowerCase().includes(q),
+    );
+  }, [posts, postFilter]);
 
   const totalUnread = conversations.reduce((n, c) => n + (c.unreadCount ?? 0), 0);
 
@@ -241,6 +361,14 @@ export default function Home() {
         </div>
 
         <div className="ml-auto flex items-center gap-2 text-xs">
+          {outlook?.configured && !outlook.connected && (
+            <a
+              href="/api/auth/outlook/login"
+              className="inline-flex items-center gap-1.5 rounded-full bg-blue-600 px-3 py-1 font-medium text-white transition hover:bg-blue-700"
+            >
+              ✉️ Connect Outlook
+            </a>
+          )}
           {overview && (
             <span className="rounded-full bg-brand-50 px-3 py-1 font-medium text-brand-700">
               {overview.publishedPosts ?? overview.totalPosts ?? 0} posts published
@@ -258,19 +386,53 @@ export default function Home() {
       <div className="flex min-h-0 flex-1">
         {/* Sidebar */}
         <aside className="flex w-[380px] shrink-0 flex-col border-r border-neutral-200 bg-white">
-          <div className="border-b border-neutral-100 px-4 py-3">
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-neutral-800">Inbox</h2>
-              <span className="text-xs text-neutral-400">{filtered.length} conversations</span>
+          {/* Tab toggle + search */}
+          <div className="border-b border-neutral-100 px-4 pt-3">
+            <div className="mb-3 flex rounded-lg bg-neutral-100 p-0.5">
+              <button
+                onClick={() => setTab("inbox")}
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-1.5 text-xs font-semibold transition ${
+                  tab === "inbox"
+                    ? "bg-white text-neutral-900 shadow-sm"
+                    : "text-neutral-500 hover:text-neutral-700"
+                }`}
+              >
+                Inbox
+                {totalUnread > 0 && (
+                  <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] text-white">
+                    {totalUnread}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setTab("posts")}
+                className={`flex-1 rounded-md py-1.5 text-xs font-semibold transition ${
+                  tab === "posts"
+                    ? "bg-white text-neutral-900 shadow-sm"
+                    : "text-neutral-500 hover:text-neutral-700"
+                }`}
+              >
+                Posts
+              </button>
             </div>
-            <input
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="Search conversations…"
-              className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm outline-none placeholder:text-neutral-400 focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100"
-            />
-            {availablePlatforms.length > 1 && (
-              <div className="mt-2 flex flex-wrap gap-1.5">
+
+            <div className="mb-2 flex items-center gap-2">
+              <input
+                value={tab === "inbox" ? filter : postFilter}
+                onChange={(e) =>
+                  tab === "inbox" ? setFilter(e.target.value) : setPostFilter(e.target.value)
+                }
+                placeholder={tab === "inbox" ? "Search conversations…" : "Search posts…"}
+                className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm outline-none placeholder:text-neutral-400 focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100"
+              />
+              <span className="shrink-0 text-xs text-neutral-400">
+                {tab === "inbox" ? filtered.length : filteredPosts.length}
+              </span>
+            </div>
+
+            {/* Platform filter pills — inbox only */}
+            {tab === "inbox" && availablePlatforms.length > 1 && (
+              <div className="mb-3 flex flex-wrap gap-1.5">
                 <button
                   onClick={() => setPlatformFilter(null)}
                   className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium transition ${
@@ -303,103 +465,251 @@ export default function Home() {
             )}
           </div>
 
-          {/* Failed-account warning (e.g. Instagram permission/timeout) */}
-          {meta?.failedAccounts && meta.failedAccounts.length > 0 && (
-            <div className="border-b border-amber-100 bg-amber-50 px-4 py-2 text-xs text-amber-700">
-              {meta.failedAccounts.map((f, i) => (
-                <div key={i}>
-                  ⚠ {platform(f.platform).label}: {f.error}
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {loadingList ? (
-              <ListSkeleton />
-            ) : listError ? (
-              <div className="p-6 text-sm text-rose-600">{listError}</div>
-            ) : filtered.length === 0 ? (
-              <EmptyList hasAny={conversations.length > 0} />
-            ) : (
-              filtered.map((c) => (
-                <ConversationRow
-                  key={c.id}
-                  c={c}
-                  active={selected?.id === c.id}
-                  onClick={() => openConversation(c)}
-                />
-              ))
-            )}
-          </div>
-        </aside>
-
-        {/* Thread */}
-        <main className="flex min-w-0 flex-1 flex-col bg-neutral-100">
-          {!selected ? (
-            <NoSelection />
-          ) : (
+          {/* Inbox list */}
+          {tab === "inbox" && (
             <>
-              <div className="flex h-16 shrink-0 items-center gap-3 border-b border-neutral-200 bg-white px-6">
-                <Avatar conv={selected} />
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold">
-                    {selected.participantName || "Unknown contact"}
-                  </div>
-                  <div className="text-xs text-neutral-400">
-                    {platform(selected.platform).label}
-                    {selected.accountUsername ? ` · @${selected.accountUsername}` : ""}
-                  </div>
+              {meta?.failedAccounts && meta.failedAccounts.length > 0 && (
+                <div className="border-b border-amber-100 bg-amber-50 px-4 py-2 text-xs text-amber-700">
+                  {meta.failedAccounts.map((f, i) => (
+                    <div key={i}>
+                      ⚠ {platform(f.platform).label}: {f.error}
+                    </div>
+                  ))}
                 </div>
-                {selected.url && (
-                  <a
-                    href={selected.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="ml-auto rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50"
-                  >
-                    Open on platform ↗
-                  </a>
+              )}
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {loadingList ? (
+                  <ListSkeleton />
+                ) : listError ? (
+                  <div className="p-6 text-sm text-rose-600">{listError}</div>
+                ) : filtered.length === 0 ? (
+                  <EmptyState hasAny={conversations.length > 0} noun="conversations" />
+                ) : (
+                  filtered.map((c) => (
+                    <ConversationRow
+                      key={c.id}
+                      c={c}
+                      active={selected?.id === c.id}
+                      onClick={() => openConversation(c)}
+                    />
+                  ))
                 )}
               </div>
+            </>
+          )}
 
+          {/* Posts list */}
+          {tab === "posts" && (
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {loadingPosts ? (
+                <ListSkeleton />
+              ) : postsError ? (
+                <div className="p-6 text-sm text-rose-600">{postsError}</div>
+              ) : filteredPosts.length === 0 ? (
+                <EmptyState hasAny={posts.length > 0} noun="posts" />
+              ) : (
+                filteredPosts.map((p) => (
+                  <PostRow
+                    key={getPostId(p)}
+                    p={p}
+                    active={!!selectedPost && getPostId(selectedPost) === getPostId(p)}
+                    onClick={() => openPost(p)}
+                  />
+                ))
+              )}
+            </div>
+          )}
+        </aside>
+
+        {/* Main panel */}
+        <main className="flex min-w-0 flex-1 flex-col bg-neutral-100">
+          {tab === "inbox" ? (
+            !selected ? (
+              <NoSelection
+                icon="✦"
+                hint="Pick a conversation on the left to read the thread and reply — across every connected platform, in one place."
+              />
+            ) : (
+              <>
+                <div className="flex h-16 shrink-0 items-center gap-3 border-b border-neutral-200 bg-white px-6">
+                  <Avatar conv={selected} />
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold">
+                      {selected.subject || selected.participantName || "Unknown contact"}
+                    </div>
+                    <div className="truncate text-xs text-neutral-400">
+                      {platform(selected.platform).label}
+                      {selected.subject && selected.participantName
+                        ? ` · ${selected.participantName}`
+                        : ""}
+                      {selected.accountUsername ? ` · @${selected.accountUsername}` : ""}
+                    </div>
+                  </div>
+                  {selected.url && (
+                    <a
+                      href={selected.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="ml-auto rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50"
+                    >
+                      Open on platform ↗
+                    </a>
+                  )}
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+                  {loadingThread ? (
+                    <ThreadSkeleton />
+                  ) : messages.length === 0 ? (
+                    <div className="grid h-full place-items-center text-sm text-neutral-400">
+                      No messages in this conversation yet.
+                    </div>
+                  ) : (
+                    <div className="mx-auto flex max-w-2xl flex-col gap-3">
+                      {messages.map((m) => (
+                        <MessageBubble key={m.id} m={m} />
+                      ))}
+                      <div ref={threadEndRef} />
+                    </div>
+                  )}
+                </div>
+
+                <div className="shrink-0 border-t border-neutral-200 bg-white px-6 py-4">
+                  <div className="mx-auto flex max-w-2xl items-end gap-3">
+                    <textarea
+                      value={inboxDraft}
+                      onChange={(e) => setInboxDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendDmReply();
+                      }}
+                      rows={1}
+                      placeholder={`Reply to ${selected.participantName || "contact"}…  (⌘↵ to send)`}
+                      className="max-h-40 min-h-[44px] flex-1 resize-none rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm outline-none placeholder:text-neutral-400 focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100"
+                    />
+                    <button
+                      onClick={sendDmReply}
+                      disabled={sendingDm || !inboxDraft.trim()}
+                      className="h-[44px] shrink-0 rounded-xl bg-brand-600 px-5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {sendingDm ? "Sending…" : "Send"}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )
+          ) : !selectedPost ? (
+            <NoSelection
+              icon="📝"
+              hint="Pick a post on the left to see its comments and reply to them."
+            />
+          ) : (
+            <>
+              {/* Post header */}
+              <div className="shrink-0 border-b border-neutral-200 bg-white px-6 py-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-xl">
+                    {platform(selectedPost.platform).emoji}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-neutral-500">
+                        {platform(selectedPost.platform).label}
+                      </span>
+                      <span className="ml-auto shrink-0 text-xs text-neutral-400">
+                        {relativeTime(getPostTime(selectedPost))}
+                      </span>
+                    </div>
+                    <p className="mt-1 line-clamp-3 text-sm text-neutral-800">
+                      {getPostCaption(selectedPost) || "No caption"}
+                    </p>
+                    <div className="mt-2 flex items-center gap-3 text-xs text-neutral-400">
+                      {(selectedPost.commentsCount ?? selectedPost.totalComments) !== undefined && (
+                        <span>
+                          💬 {selectedPost.commentsCount ?? selectedPost.totalComments} comments
+                        </span>
+                      )}
+                      {selectedPost.likesCount !== undefined && (
+                        <span>❤ {selectedPost.likesCount} likes</span>
+                      )}
+                      {(selectedPost.permalink ?? selectedPost.url) && (
+                        <a
+                          href={selectedPost.permalink ?? selectedPost.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="ml-auto text-brand-600 hover:underline"
+                        >
+                          Open post ↗
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Comments list */}
               <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-                {loadingThread ? (
+                {loadingComments ? (
                   <ThreadSkeleton />
-                ) : messages.length === 0 ? (
+                ) : comments.length === 0 ? (
                   <div className="grid h-full place-items-center text-sm text-neutral-400">
-                    No messages in this conversation yet.
+                    No comments yet.
                   </div>
                 ) : (
                   <div className="mx-auto flex max-w-2xl flex-col gap-3">
-                    {messages.map((m) => (
-                      <MessageBubble key={m.id} m={m} />
+                    {comments.map((c) => (
+                      <CommentBubble
+                        key={getCommentId(c)}
+                        c={c}
+                        onReply={() => setReplyingTo(c)}
+                      />
                     ))}
-                    <div ref={threadEndRef} />
+                    <div ref={commentEndRef} />
                   </div>
                 )}
               </div>
 
-              {/* Composer */}
+              {/* Comment composer */}
               <div className="shrink-0 border-t border-neutral-200 bg-white px-6 py-4">
-                <div className="mx-auto flex max-w-2xl items-end gap-3">
-                  <textarea
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendReply();
-                    }}
-                    rows={1}
-                    placeholder={`Reply to ${selected.participantName || "contact"}…  (⌘↵ to send)`}
-                    className="max-h-40 min-h-[44px] flex-1 resize-none rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm outline-none placeholder:text-neutral-400 focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100"
-                  />
-                  <button
-                    onClick={sendReply}
-                    disabled={sending || !draft.trim()}
-                    className="h-[44px] shrink-0 rounded-xl bg-brand-600 px-5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {sending ? "Sending…" : "Send"}
-                  </button>
+                <div className="mx-auto max-w-2xl">
+                  {replyingTo && (
+                    <div className="mb-2 flex items-center gap-2 rounded-lg bg-brand-50 px-3 py-1.5 text-xs text-brand-700">
+                      <span>
+                        Replying to{" "}
+                        <strong>{getCommentSender(replyingTo) || "comment"}</strong>:{" "}
+                        {getCommentText(replyingTo).slice(0, 60)}
+                        {getCommentText(replyingTo).length > 60 ? "…" : ""}
+                      </span>
+                      <button
+                        onClick={() => setReplyingTo(null)}
+                        className="ml-auto shrink-0 text-brand-400 hover:text-brand-700"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex items-end gap-3">
+                    <textarea
+                      value={commentDraft}
+                      onChange={(e) => setCommentDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendCommentReply();
+                      }}
+                      rows={1}
+                      placeholder={
+                        replyingTo
+                          ? `Reply to ${getCommentSender(replyingTo) || "comment"}…  (⌘↵ to send)`
+                          : "Add a comment…  (⌘↵ to send)"
+                      }
+                      className="max-h-40 min-h-[44px] flex-1 resize-none rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm outline-none placeholder:text-neutral-400 focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100"
+                    />
+                    <button
+                      onClick={sendCommentReply}
+                      disabled={sendingComment || !commentDraft.trim()}
+                      className="h-[44px] shrink-0 rounded-xl bg-brand-600 px-5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {sendingComment ? "Sending…" : "Reply"}
+                    </button>
+                  </div>
                 </div>
               </div>
             </>
@@ -410,7 +720,8 @@ export default function Home() {
   );
 }
 
-// ── Subcomponents ─────────────────────────────────────────────────────────────
+// ── Sub-components ────────────────────────────────────────────────────────────
+
 function Avatar({ conv }: { conv: Conversation }) {
   const p = platform(conv.platform);
   const initial = (conv.participantName || "?").charAt(0).toUpperCase();
@@ -449,20 +760,46 @@ function ConversationRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
           <span className="truncate text-sm font-medium text-neutral-900">
-            {c.participantName || "Unknown contact"}
+            {c.subject || c.participantName || "Unknown contact"}
           </span>
           <span className="shrink-0 text-xs text-neutral-400">{relativeTime(c.updatedTime)}</span>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-xs text-neutral-500">
-            {c.lastMessage || "No preview"}
-          </span>
+          <span className="truncate text-xs text-neutral-500">{c.lastMessage || "No preview"}</span>
           {c.unreadCount ? (
             <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white">
               {c.unreadCount}
             </span>
           ) : null}
         </div>
+      </div>
+    </button>
+  );
+}
+
+function PostRow({ p, active, onClick }: { p: Post; active: boolean; onClick: () => void }) {
+  const pl = platform(p.platform);
+  const caption = getPostCaption(p);
+  const commentCount = p.commentsCount ?? p.totalComments;
+  return (
+    <button
+      onClick={onClick}
+      className={`flex w-full items-start gap-3 border-b border-neutral-100 px-4 py-3 text-left transition ${
+        active ? "bg-brand-50" : "hover:bg-neutral-50"
+      }`}
+    >
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-xl">
+        {pl.emoji}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-medium text-neutral-500">{pl.label}</span>
+          <span className="shrink-0 text-xs text-neutral-400">{relativeTime(getPostTime(p))}</span>
+        </div>
+        <p className="mt-0.5 line-clamp-2 text-sm text-neutral-800">{caption || "No caption"}</p>
+        {commentCount !== undefined && (
+          <span className="mt-0.5 block text-xs text-neutral-400">💬 {commentCount} comments</span>
+        )}
       </div>
     </button>
   );
@@ -480,9 +817,12 @@ function MessageBubble({ m }: { m: Message }) {
             : "rounded-bl-md bg-white text-neutral-800"
         }`}
       >
+        {!outgoing && m.senderName && (
+          <div className="mb-1 text-xs font-medium text-neutral-500">{m.senderName}</div>
+        )}
         {hasText && <div className="whitespace-pre-wrap break-words">{m.message}</div>}
         {m.attachments?.map((a, i) => (
-          <div key={i} className={`${hasText ? "mt-2 " : ""}`}>
+          <div key={i} className={hasText ? "mt-2" : ""}>
             {a.type === "image" && a.url ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={a.previewUrl || a.url} alt="" className="max-h-56 rounded-lg" />
@@ -508,27 +848,59 @@ function MessageBubble({ m }: { m: Message }) {
   );
 }
 
-function NoSelection() {
+function CommentBubble({ c, onReply }: { c: Comment; onReply: () => void }) {
+  const outgoing = c.direction === "outgoing";
+  const text = getCommentText(c);
+  const sender = getCommentSender(c);
+  return (
+    <div className={`group flex flex-col gap-0.5 ${outgoing ? "items-end" : "items-start"}`}>
+      {!outgoing && sender && (
+        <span className="ml-1 text-xs font-medium text-neutral-500">{sender}</span>
+      )}
+      <div
+        className={`max-w-[78%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${
+          outgoing
+            ? "rounded-br-md bg-brand-600 text-white"
+            : "rounded-bl-md bg-white text-neutral-800"
+        }`}
+      >
+        <div className="whitespace-pre-wrap break-words">{text || "—"}</div>
+        <div
+          className={`mt-1 text-right text-[10px] ${outgoing ? "text-white/70" : "text-neutral-400"}`}
+        >
+          {clockTime(c.createdAt)}
+        </div>
+      </div>
+      {!outgoing && (
+        <button
+          onClick={onReply}
+          className="ml-1 text-xs text-neutral-400 opacity-0 transition-opacity group-hover:opacity-100 hover:text-brand-600"
+        >
+          ↩ Reply
+        </button>
+      )}
+    </div>
+  );
+}
+
+function NoSelection({ icon, hint }: { icon: string; hint: string }) {
   return (
     <div className="grid h-full place-items-center px-6 text-center">
       <div>
         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-3xl shadow-sm">
-          ✦
+          {icon}
         </div>
         <h3 className="text-lg font-semibold text-neutral-800">Your unified inbox</h3>
-        <p className="mt-1 max-w-sm text-sm text-neutral-500">
-          Pick a conversation on the left to read the thread and reply — across every connected
-          platform, in one place.
-        </p>
+        <p className="mt-1 max-w-sm text-sm text-neutral-500">{hint}</p>
       </div>
     </div>
   );
 }
 
-function EmptyList({ hasAny }: { hasAny: boolean }) {
+function EmptyState({ hasAny, noun }: { hasAny: boolean; noun: string }) {
   return (
     <div className="p-6 text-center text-sm text-neutral-400">
-      {hasAny ? "No conversations match your search." : "No conversations yet."}
+      {hasAny ? `No ${noun} match your search.` : `No ${noun} yet.`}
     </div>
   );
 }

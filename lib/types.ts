@@ -18,6 +18,7 @@ export interface Conversation {
   participantId?: string;
   participantName?: string;
   participantPicture?: string | null;
+  subject?: string | null; // email subject (Outlook); absent for chat-style DMs
   lastMessage?: string;
   updatedTime?: string;
   status?: "active" | "archived";
@@ -56,4 +57,37 @@ export interface AnalyticsOverview {
   publishedPosts?: number;
   scheduledPosts?: number;
   lastSync?: string;
+}
+
+export interface Post {
+  _id?: string;
+  id?: string;
+  postId?: string;
+  platform?: string;
+  accountId?: string;
+  caption?: string;
+  content?: string;
+  message?: string;
+  publishedAt?: string;
+  createdAt?: string;
+  commentsCount?: number;
+  totalComments?: number;
+  likesCount?: number;
+  permalink?: string;
+  url?: string;
+  thumbnailUrl?: string;
+  mediaUrl?: string;
+}
+
+export interface Comment {
+  _id?: string;
+  id?: string;
+  message?: string;
+  text?: string;
+  body?: string;
+  from?: string;
+  username?: string;
+  senderName?: string;
+  createdAt?: string;
+  direction?: "incoming" | "outgoing";
 }

@@ -1,7 +1,23 @@
 # zerniotest
 
-A Kinso-style **unified inbox** built on the [Zernio API](https://docs.zernio.com):
-read social DMs across platforms in one web app, open threads, and reply.
+A Kinso-style **unified inbox** that merges multiple sources into one view:
+- **Zernio** — social DMs across platforms (Instagram, Messenger, X, Telegram, …).
+- **Outlook** — email threads via Microsoft Graph.
+
+Read threads across every source, open them, and reply — all in one web app.
+
+## Sources & architecture
+
+Each backend implements a small `InboxSource` interface (`lib/sources/source.ts`)
+exposing accounts / conversations / messages / send. A registry
+(`lib/sources/registry.ts`) merges them and namespaces every id as
+`source::nativeId`, so the single set of `/api/*` routes can route a thread read
+or reply back to the source that owns it. Adding a new source is just another
+implementation of that interface.
+
+- `lib/sources/zernio-source.ts` — social DMs (wraps `src/zernio.ts`).
+- `lib/sources/outlook-source.ts` — Outlook mail over Microsoft Graph.
+- `lib/sources/outlook-auth.ts` — Graph OAuth + refresh-token storage.
 
 ## The web app
 
@@ -39,6 +55,20 @@ the browser talks to `/api/*` routes, which proxy to Zernio. Key files:
    ```bash
    npm install
    ```
+
+### Connecting Outlook (optional)
+
+Outlook mail uses Microsoft Graph, which needs an Azure AD app registration:
+
+1. At [portal.azure.com](https://portal.azure.com) → **Azure AD → App registrations → New registration**.
+2. Add a **Web** redirect URI: `http://localhost:3000/api/auth/outlook/callback`.
+3. Under **API permissions** add delegated Graph scopes: `offline_access`,
+   `User.Read`, `Mail.Read`, `Mail.Send`.
+4. Under **Certificates & secrets**, create a client secret.
+5. Put the values in `.env` (`MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `MS_TENANT_ID`,
+   `MS_REDIRECT_URI` — see `.env.example`).
+6. Run the app and click **✉️ Connect Outlook** in the header to grant access.
+   The refresh token is stored in gitignored `.outlook-tokens.json` (single-user, local).
 
 ## Run the explorer
 
