@@ -342,383 +342,398 @@ export default function Home() {
   const totalUnread = conversations.reduce((n, c) => n + (c.unreadCount ?? 0), 0);
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Header */}
-      <header className="flex h-16 shrink-0 items-center gap-4 border-b border-neutral-200 bg-white px-6">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-white shadow-sm">
+    <div className="flex h-full">
+      {/* ── Dark sidebar ─────────────────────────────────────────────────── */}
+      <aside className="flex w-[340px] shrink-0 flex-col bg-sidebar">
+        {/* Logo area */}
+        <div className="flex h-16 shrink-0 items-center gap-3 border-b border-sidebar-border px-5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 text-lg text-white shadow-lg shadow-brand-500/25">
             ✦
           </div>
           <div className="leading-tight">
-            <div className="text-sm font-semibold">Kinso Clone</div>
-            <div className="text-xs text-neutral-400">Unified inbox · Zernio</div>
+            <div className="text-sm font-semibold text-white">Kinso</div>
+            <div className="text-[11px] text-sidebar-muted">Unified Inbox</div>
           </div>
-        </div>
-
-        <div className="ml-2 flex items-center gap-1.5">
-          {accounts.map((a) => {
-            const p = platform(a.platform);
-            return (
-              <span
-                key={a._id ?? a.id ?? a.accountId}
-                className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-2.5 py-1 text-xs font-medium text-neutral-700"
-                title={`${p.label} · ${a.displayName ?? a.name ?? ""}`}
-              >
-                <span>{p.emoji}</span>
-                <span className="max-w-[120px] truncate">{a.displayName ?? a.name ?? p.label}</span>
+          <div className="ml-auto flex items-center gap-1.5">
+            {totalUnread > 0 && (
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white">
+                {totalUnread}
               </span>
-            );
-          })}
-        </div>
-
-        <div className="ml-auto flex items-center gap-2 text-xs">
-          {overview && (
-            <span className="rounded-full bg-brand-50 px-3 py-1 font-medium text-brand-700">
-              {overview.publishedPosts ?? overview.totalPosts ?? 0} posts published
-            </span>
-          )}
-          {totalUnread > 0 && (
-            <span className="rounded-full bg-rose-50 px-3 py-1 font-medium text-rose-600">
-              {totalUnread} unread
-            </span>
-          )}
-        </div>
-      </header>
-
-      {/* Body */}
-      <div className="flex min-h-0 flex-1">
-        {/* Sidebar */}
-        <aside className="flex w-[380px] shrink-0 flex-col border-r border-neutral-200 bg-white">
-          {/* Tab toggle + search */}
-          <div className="border-b border-neutral-100 px-4 pt-3">
-            <div className="mb-3 flex rounded-lg bg-neutral-100 p-0.5">
-              <button
-                onClick={() => setTab("inbox")}
-                className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-1.5 text-xs font-semibold transition ${
-                  tab === "inbox"
-                    ? "bg-white text-neutral-900 shadow-sm"
-                    : "text-neutral-500 hover:text-neutral-700"
-                }`}
-              >
-                Inbox
-                {totalUnread > 0 && (
-                  <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] text-white">
-                    {totalUnread}
-                  </span>
-                )}
-              </button>
-              <button
-                onClick={() => setTab("posts")}
-                className={`flex-1 rounded-md py-1.5 text-xs font-semibold transition ${
-                  tab === "posts"
-                    ? "bg-white text-neutral-900 shadow-sm"
-                    : "text-neutral-500 hover:text-neutral-700"
-                }`}
-              >
-                Posts
-              </button>
-            </div>
-
-            <div className="mb-2 flex items-center gap-2">
-              <input
-                value={tab === "inbox" ? filter : postFilter}
-                onChange={(e) =>
-                  tab === "inbox" ? setFilter(e.target.value) : setPostFilter(e.target.value)
-                }
-                placeholder={tab === "inbox" ? "Search conversations…" : "Search posts…"}
-                className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm outline-none placeholder:text-neutral-400 focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100"
-              />
-              <span className="shrink-0 text-xs text-neutral-400">
-                {tab === "inbox" ? filtered.length : filteredPosts.length}
-              </span>
-            </div>
-
-            {/* Platform filter pills — inbox only */}
-            {tab === "inbox" && availablePlatforms.length > 1 && (
-              <div className="mb-3 flex flex-wrap gap-1.5">
-                <button
-                  onClick={() => setPlatformFilter(null)}
-                  className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium transition ${
-                    platformFilter === null
-                      ? "bg-brand-600 text-white shadow-sm"
-                      : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-                  }`}
-                >
-                  All
-                </button>
-                {availablePlatforms.map((p) => {
-                  const info = platform(p);
-                  const active = platformFilter === p;
-                  return (
-                    <button
-                      key={p}
-                      onClick={() => setPlatformFilter(active ? null : p)}
-                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition ${
-                        active
-                          ? "bg-brand-600 text-white shadow-sm"
-                          : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-                      }`}
-                    >
-                      <span>{info.emoji}</span>
-                      <span>{info.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
             )}
           </div>
+        </div>
 
-          {/* Inbox list */}
-          {tab === "inbox" && (
-            <>
-              {meta?.failedAccounts && meta.failedAccounts.length > 0 && (
-                <div className="border-b border-amber-100 bg-amber-50 px-4 py-2 text-xs text-amber-700">
-                  {meta.failedAccounts.map((f, i) => (
-                    <div key={i}>
-                      ⚠ {platform(f.platform).label}: {f.error}
-                    </div>
-                  ))}
-                </div>
+        {/* Connected accounts strip */}
+        {accounts.length > 0 && (
+          <div className="flex flex-wrap gap-1 border-b border-sidebar-border px-4 py-2.5">
+            {accounts.map((a) => {
+              const p = platform(a.platform);
+              return (
+                <span
+                  key={a._id ?? a.id ?? a.accountId}
+                  className="inline-flex items-center gap-1 rounded-md bg-white/[0.08] px-2 py-0.5 text-[11px] text-slate-300"
+                  title={`${p.label} · ${a.displayName ?? a.name ?? ""}`}
+                >
+                  <span className="text-xs">{p.emoji}</span>
+                  <span className="max-w-[80px] truncate">{a.displayName ?? a.name ?? p.label}</span>
+                </span>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Tab toggle */}
+        <div className="px-3 pt-3">
+          <div className="flex rounded-lg bg-white/[0.06] p-0.5">
+            <button
+              onClick={() => setTab("inbox")}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-1.5 text-xs font-semibold transition-all ${
+                tab === "inbox"
+                  ? "bg-white/[0.12] text-white shadow-sm"
+                  : "text-sidebar-muted hover:text-slate-300"
+              }`}
+            >
+              Inbox
+              {totalUnread > 0 && (
+                <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                  {totalUnread}
+                </span>
               )}
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                {loadingList ? (
-                  <ListSkeleton />
-                ) : listError ? (
-                  <div className="p-6 text-sm text-rose-600">{listError}</div>
-                ) : filtered.length === 0 ? (
-                  <EmptyState hasAny={conversations.length > 0} noun="conversations" />
-                ) : (
-                  filtered.map((c) => (
+            </button>
+            <button
+              onClick={() => setTab("posts")}
+              className={`flex-1 rounded-md py-1.5 text-xs font-semibold transition-all ${
+                tab === "posts"
+                  ? "bg-white/[0.12] text-white shadow-sm"
+                  : "text-sidebar-muted hover:text-slate-300"
+              }`}
+            >
+              Posts
+            </button>
+          </div>
+        </div>
+
+        {/* Search */}
+        <div className="px-3 pt-2 pb-1">
+          <div className="relative">
+            <svg className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-sidebar-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              value={tab === "inbox" ? filter : postFilter}
+              onChange={(e) =>
+                tab === "inbox" ? setFilter(e.target.value) : setPostFilter(e.target.value)
+              }
+              placeholder={tab === "inbox" ? "Search conversations…" : "Search posts…"}
+              className="w-full rounded-lg border border-white/[0.08] bg-white/[0.05] py-2 pl-8 pr-3 text-xs text-white outline-none placeholder:text-sidebar-muted focus:border-brand-500/50 focus:bg-white/[0.08] focus:ring-1 focus:ring-brand-500/30"
+            />
+            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-sidebar-muted">
+              {tab === "inbox" ? filtered.length : filteredPosts.length}
+            </span>
+          </div>
+        </div>
+
+        {/* Platform filter pills — inbox only */}
+        {tab === "inbox" && availablePlatforms.length > 1 && (
+          <div className="flex flex-wrap gap-1 px-3 py-2">
+            <button
+              onClick={() => setPlatformFilter(null)}
+              className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition-all ${
+                platformFilter === null
+                  ? "bg-brand-600 text-white shadow-sm"
+                  : "text-sidebar-muted hover:bg-white/[0.08] hover:text-slate-300"
+              }`}
+            >
+              All
+            </button>
+            {availablePlatforms.map((p) => {
+              const info = platform(p);
+              const active = platformFilter === p;
+              return (
+                <button
+                  key={p}
+                  onClick={() => setPlatformFilter(active ? null : p)}
+                  className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium transition-all ${
+                    active
+                      ? "bg-brand-600 text-white shadow-sm"
+                      : "text-sidebar-muted hover:bg-white/[0.08] hover:text-slate-300"
+                  }`}
+                >
+                  <span className="text-xs">{info.emoji}</span>
+                  <span>{info.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Inbox list */}
+        {tab === "inbox" && (
+          <>
+            {meta?.failedAccounts && meta.failedAccounts.length > 0 && (
+              <div className="mx-3 mb-2 rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
+                {meta.failedAccounts.map((f, i) => (
+                  <div key={i}>
+                    ⚠ {platform(f.platform).label}: {f.error}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {loadingList ? (
+                <DarkListSkeleton />
+              ) : listError ? (
+                <div className="p-6 text-sm text-rose-400">{listError}</div>
+              ) : filtered.length === 0 ? (
+                <DarkEmptyState hasAny={conversations.length > 0} noun="conversations" />
+              ) : (
+                <div className="px-2 py-1">
+                  {filtered.map((c) => (
                     <ConversationRow
                       key={c.id}
                       c={c}
                       active={selected?.id === c.id}
                       onClick={() => openConversation(c)}
                     />
-                  ))
-                )}
-              </div>
-            </>
-          )}
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
 
-          {/* Posts list */}
-          {tab === "posts" && (
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {loadingPosts ? (
-                <ListSkeleton />
-              ) : postsError ? (
-                <div className="p-6 text-sm text-rose-600">{postsError}</div>
-              ) : filteredPosts.length === 0 ? (
-                <EmptyState hasAny={posts.length > 0} noun="posts" />
-              ) : (
-                filteredPosts.map((p) => (
+        {/* Posts list */}
+        {tab === "posts" && (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {loadingPosts ? (
+              <DarkListSkeleton />
+            ) : postsError ? (
+              <div className="p-6 text-sm text-rose-400">{postsError}</div>
+            ) : filteredPosts.length === 0 ? (
+              <DarkEmptyState hasAny={posts.length > 0} noun="posts" />
+            ) : (
+              <div className="px-2 py-1">
+                {filteredPosts.map((p) => (
                   <PostRow
                     key={getPostId(p)}
                     p={p}
                     active={!!selectedPost && getPostId(selectedPost) === getPostId(p)}
                     onClick={() => openPost(p)}
                   />
-                ))
-              )}
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Analytics footer */}
+        {overview && (
+          <div className="shrink-0 border-t border-sidebar-border px-4 py-3">
+            <div className="flex items-center gap-2 text-[11px] text-sidebar-muted">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              {overview.publishedPosts ?? overview.totalPosts ?? 0} posts published
             </div>
-          )}
-        </aside>
+          </div>
+        )}
+      </aside>
 
-        {/* Main panel */}
-        <main className="flex min-w-0 flex-1 flex-col bg-neutral-100">
-          {tab === "inbox" ? (
-            !selected ? (
-              <NoSelection
-                icon="✦"
-                hint="Pick a conversation on the left to read the thread and reply — across every connected platform, in one place."
-              />
-            ) : (
-              <>
-                <div className="flex h-16 shrink-0 items-center gap-3 border-b border-neutral-200 bg-white px-6">
-                  <Avatar conv={selected} />
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-semibold">
-                      {selected.subject || selected.participantName || "Unknown contact"}
-                    </div>
-                    <div className="truncate text-xs text-neutral-400">
-                      {platform(selected.platform).label}
-                      {selected.subject && selected.participantName
-                        ? ` · ${selected.participantName}`
-                        : ""}
-                      {selected.accountUsername ? ` · @${selected.accountUsername}` : ""}
-                    </div>
-                  </div>
-                  {selected.url && (
-                    <a
-                      href={selected.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="ml-auto rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50"
-                    >
-                      Open on platform ↗
-                    </a>
-                  )}
-                </div>
-
-                <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-                  {loadingThread ? (
-                    <ThreadSkeleton />
-                  ) : messages.length === 0 ? (
-                    <div className="grid h-full place-items-center text-sm text-neutral-400">
-                      No messages in this conversation yet.
-                    </div>
-                  ) : (
-                    <div className="mx-auto flex max-w-2xl flex-col gap-3">
-                      {messages.map((m) => (
-                        <MessageBubble key={m.id} m={m} />
-                      ))}
-                      <div ref={threadEndRef} />
-                    </div>
-                  )}
-                </div>
-
-                <div className="shrink-0 border-t border-neutral-200 bg-white px-6 py-4">
-                  <div className="mx-auto flex max-w-2xl items-end gap-3">
-                    <textarea
-                      value={inboxDraft}
-                      onChange={(e) => setInboxDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendDmReply();
-                      }}
-                      rows={1}
-                      placeholder={`Reply to ${selected.participantName || "contact"}…  (⌘↵ to send)`}
-                      className="max-h-40 min-h-[44px] flex-1 resize-none rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm outline-none placeholder:text-neutral-400 focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100"
-                    />
-                    <button
-                      onClick={sendDmReply}
-                      disabled={sendingDm || !inboxDraft.trim()}
-                      className="h-[44px] shrink-0 rounded-xl bg-brand-600 px-5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      {sendingDm ? "Sending…" : "Send"}
-                    </button>
-                  </div>
-                </div>
-              </>
-            )
-          ) : !selectedPost ? (
+      {/* ── Main panel ────────────────────────────────────────────────────── */}
+      <main className="flex min-w-0 flex-1 flex-col bg-gray-50">
+        {tab === "inbox" ? (
+          !selected ? (
             <NoSelection
-              icon="📝"
-              hint="Pick a post on the left to see its comments and reply to them."
+              icon="✦"
+              hint="Pick a conversation on the left to read the thread and reply — across every connected platform, in one place."
             />
           ) : (
             <>
-              {/* Post header */}
-              <div className="shrink-0 border-b border-neutral-200 bg-white px-6 py-4">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-xl">
-                    {platform(selectedPost.platform).emoji}
+              {/* Thread header */}
+              <div className="flex h-16 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-6 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+                <Avatar conv={selected} />
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-gray-900">
+                    {selected.subject || selected.participantName || "Unknown contact"}
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium text-neutral-500">
-                        {platform(selectedPost.platform).label}
-                      </span>
-                      <span className="ml-auto shrink-0 text-xs text-neutral-400">
-                        {relativeTime(getPostTime(selectedPost))}
-                      </span>
-                    </div>
-                    <p className="mt-1 line-clamp-3 text-sm text-neutral-800">
-                      {getPostCaption(selectedPost) || "No caption"}
-                    </p>
-                    <div className="mt-2 flex items-center gap-3 text-xs text-neutral-400">
-                      {(selectedPost.commentsCount ?? selectedPost.totalComments) !== undefined && (
-                        <span>
-                          💬 {selectedPost.commentsCount ?? selectedPost.totalComments} comments
-                        </span>
-                      )}
-                      {selectedPost.likesCount !== undefined && (
-                        <span>❤ {selectedPost.likesCount} likes</span>
-                      )}
-                      {(selectedPost.permalink ?? selectedPost.url) && (
-                        <a
-                          href={selectedPost.permalink ?? selectedPost.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="ml-auto text-brand-600 hover:underline"
-                        >
-                          Open post ↗
-                        </a>
-                      )}
-                    </div>
+                  <div className="truncate text-xs text-gray-400">
+                    {platform(selected.platform).label}
+                    {selected.subject && selected.participantName
+                      ? ` · ${selected.participantName}`
+                      : ""}
+                    {selected.accountUsername ? ` · @${selected.accountUsername}` : ""}
                   </div>
                 </div>
+                {selected.url && (
+                  <a
+                    href={selected.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="ml-auto rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 shadow-sm transition hover:bg-gray-50 hover:shadow"
+                  >
+                    Open on platform ↗
+                  </a>
+                )}
               </div>
 
-              {/* Comments list */}
-              <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-                {loadingComments ? (
+              {/* Messages */}
+              <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+                {loadingThread ? (
                   <ThreadSkeleton />
-                ) : comments.length === 0 ? (
-                  <div className="grid h-full place-items-center text-sm text-neutral-400">
-                    No comments yet.
+                ) : messages.length === 0 ? (
+                  <div className="grid h-full place-items-center text-sm text-gray-400">
+                    No messages in this conversation yet.
                   </div>
                 ) : (
                   <div className="mx-auto flex max-w-2xl flex-col gap-3">
-                    {comments.map((c) => (
-                      <CommentBubble
-                        key={getCommentId(c)}
-                        c={c}
-                        onReply={() => setReplyingTo(c)}
-                      />
+                    {messages.map((m) => (
+                      <MessageBubble key={m.id} m={m} />
                     ))}
-                    <div ref={commentEndRef} />
+                    <div ref={threadEndRef} />
                   </div>
                 )}
               </div>
 
-              {/* Comment composer */}
-              <div className="shrink-0 border-t border-neutral-200 bg-white px-6 py-4">
-                <div className="mx-auto max-w-2xl">
-                  {replyingTo && (
-                    <div className="mb-2 flex items-center gap-2 rounded-lg bg-brand-50 px-3 py-1.5 text-xs text-brand-700">
-                      <span>
-                        Replying to{" "}
-                        <strong>{getCommentSender(replyingTo) || "comment"}</strong>:{" "}
-                        {getCommentText(replyingTo).slice(0, 60)}
-                        {getCommentText(replyingTo).length > 60 ? "…" : ""}
-                      </span>
-                      <button
-                        onClick={() => setReplyingTo(null)}
-                        className="ml-auto shrink-0 text-brand-400 hover:text-brand-700"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  )}
-                  <div className="flex items-end gap-3">
-                    <textarea
-                      value={commentDraft}
-                      onChange={(e) => setCommentDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendCommentReply();
-                      }}
-                      rows={1}
-                      placeholder={
-                        replyingTo
-                          ? `Reply to ${getCommentSender(replyingTo) || "comment"}…  (⌘↵ to send)`
-                          : "Add a comment…  (⌘↵ to send)"
-                      }
-                      className="max-h-40 min-h-[44px] flex-1 resize-none rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm outline-none placeholder:text-neutral-400 focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100"
-                    />
-                    <button
-                      onClick={sendCommentReply}
-                      disabled={sendingComment || !commentDraft.trim()}
-                      className="h-[44px] shrink-0 rounded-xl bg-brand-600 px-5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      {sendingComment ? "Sending…" : "Reply"}
-                    </button>
-                  </div>
+              {/* Composer */}
+              <div className="shrink-0 border-t border-gray-200 bg-white px-6 py-4">
+                <div className="mx-auto flex max-w-2xl items-end gap-3">
+                  <textarea
+                    value={inboxDraft}
+                    onChange={(e) => setInboxDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendDmReply();
+                    }}
+                    rows={1}
+                    placeholder={`Reply to ${selected.participantName || "contact"}…  (⌘↵ to send)`}
+                    className="max-h-40 min-h-[44px] flex-1 resize-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm outline-none placeholder:text-gray-400 focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100 focus:shadow-sm"
+                  />
+                  <button
+                    onClick={sendDmReply}
+                    disabled={sendingDm || !inboxDraft.trim()}
+                    className="h-[44px] shrink-0 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 px-5 text-sm font-semibold text-white shadow-md shadow-brand-500/25 transition hover:shadow-lg hover:shadow-brand-500/30 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
+                  >
+                    {sendingDm ? "Sending…" : "Send"}
+                  </button>
                 </div>
               </div>
             </>
-          )}
-        </main>
-      </div>
+          )
+        ) : !selectedPost ? (
+          <NoSelection
+            icon="📝"
+            hint="Pick a post on the left to see its comments and reply to them."
+          />
+        ) : (
+          <>
+            {/* Post header */}
+            <div className="shrink-0 border-b border-gray-200 bg-white px-6 py-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-xl">
+                  {platform(selectedPost.platform).emoji}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-gray-500">
+                      {platform(selectedPost.platform).label}
+                    </span>
+                    <span className="ml-auto shrink-0 text-xs text-gray-400">
+                      {relativeTime(getPostTime(selectedPost))}
+                    </span>
+                  </div>
+                  <p className="mt-1 line-clamp-3 text-sm text-gray-800">
+                    {getPostCaption(selectedPost) || "No caption"}
+                  </p>
+                  <div className="mt-2 flex items-center gap-3 text-xs text-gray-400">
+                    {(selectedPost.commentsCount ?? selectedPost.totalComments) !== undefined && (
+                      <span>
+                        💬 {selectedPost.commentsCount ?? selectedPost.totalComments} comments
+                      </span>
+                    )}
+                    {selectedPost.likesCount !== undefined && (
+                      <span>❤ {selectedPost.likesCount} likes</span>
+                    )}
+                    {(selectedPost.permalink ?? selectedPost.url) && (
+                      <a
+                        href={selectedPost.permalink ?? selectedPost.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="ml-auto font-medium text-brand-600 hover:underline"
+                      >
+                        Open post ↗
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Comments list */}
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+              {loadingComments ? (
+                <ThreadSkeleton />
+              ) : comments.length === 0 ? (
+                <div className="grid h-full place-items-center text-sm text-gray-400">
+                  No comments yet.
+                </div>
+              ) : (
+                <div className="mx-auto flex max-w-2xl flex-col gap-3">
+                  {comments.map((c) => (
+                    <CommentBubble
+                      key={getCommentId(c)}
+                      c={c}
+                      onReply={() => setReplyingTo(c)}
+                    />
+                  ))}
+                  <div ref={commentEndRef} />
+                </div>
+              )}
+            </div>
+
+            {/* Comment composer */}
+            <div className="shrink-0 border-t border-gray-200 bg-white px-6 py-4">
+              <div className="mx-auto max-w-2xl">
+                {replyingTo && (
+                  <div className="mb-2 flex items-center gap-2 rounded-lg bg-brand-50 px-3 py-1.5 text-xs text-brand-700">
+                    <span>
+                      Replying to{" "}
+                      <strong>{getCommentSender(replyingTo) || "comment"}</strong>:{" "}
+                      {getCommentText(replyingTo).slice(0, 60)}
+                      {getCommentText(replyingTo).length > 60 ? "…" : ""}
+                    </span>
+                    <button
+                      onClick={() => setReplyingTo(null)}
+                      className="ml-auto shrink-0 text-brand-400 hover:text-brand-700"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+                <div className="flex items-end gap-3">
+                  <textarea
+                    value={commentDraft}
+                    onChange={(e) => setCommentDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendCommentReply();
+                    }}
+                    rows={1}
+                    placeholder={
+                      replyingTo
+                        ? `Reply to ${getCommentSender(replyingTo) || "comment"}…  (⌘↵ to send)`
+                        : "Add a comment…  (⌘↵ to send)"
+                    }
+                    className="max-h-40 min-h-[44px] flex-1 resize-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm outline-none placeholder:text-gray-400 focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100 focus:shadow-sm"
+                  />
+                  <button
+                    onClick={sendCommentReply}
+                    disabled={sendingComment || !commentDraft.trim()}
+                    className="h-[44px] shrink-0 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 px-5 text-sm font-semibold text-white shadow-md shadow-brand-500/25 transition hover:shadow-lg hover:shadow-brand-500/30 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
+                  >
+                    {sendingComment ? "Sending…" : "Reply"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </main>
     </div>
   );
 }
@@ -730,11 +745,29 @@ function Avatar({ conv }: { conv: Conversation }) {
   const initial = (conv.participantName || "?").charAt(0).toUpperCase();
   return (
     <div className="relative">
-      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-brand-100 to-brand-50 text-sm font-semibold text-brand-700">
+      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-brand-600 text-sm font-semibold text-white shadow-sm">
         {initial}
       </div>
       <span
         className={`absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full ${p.dot} text-[8px] ring-2 ring-white`}
+        title={p.label}
+      >
+        {p.emoji}
+      </span>
+    </div>
+  );
+}
+
+function SidebarAvatar({ conv }: { conv: Conversation }) {
+  const p = platform(conv.platform);
+  const initial = (conv.participantName || "?").charAt(0).toUpperCase();
+  return (
+    <div className="relative">
+      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-brand-600 text-xs font-semibold text-white">
+        {initial}
+      </div>
+      <span
+        className={`absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full ${p.dot} text-[7px] ring-[1.5px] ring-sidebar`}
         title={p.label}
       >
         {p.emoji}
@@ -755,22 +788,26 @@ function ConversationRow({
   return (
     <button
       onClick={onClick}
-      className={`flex w-full items-start gap-3 border-b border-neutral-100 px-4 py-3 text-left transition ${
-        active ? "bg-brand-50" : "hover:bg-neutral-50"
+      className={`flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-all ${
+        active
+          ? "bg-white/[0.12]"
+          : "hover:bg-white/[0.06]"
       }`}
     >
-      <Avatar conv={c} />
+      <SidebarAvatar conv={c} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium text-neutral-900">
+          <span className={`truncate text-sm ${c.unreadCount ? "font-semibold text-white" : "font-medium text-slate-300"}`}>
             {c.subject || c.participantName || "Unknown contact"}
           </span>
-          <span className="shrink-0 text-xs text-neutral-400">{relativeTime(c.updatedTime)}</span>
+          <span className="shrink-0 text-[11px] text-sidebar-muted">{relativeTime(c.updatedTime)}</span>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-xs text-neutral-500">{c.lastMessage || "No preview"}</span>
+          <span className={`truncate text-xs ${c.unreadCount ? "text-slate-400" : "text-sidebar-muted"}`}>
+            {c.lastMessage || "No preview"}
+          </span>
           {c.unreadCount ? (
-            <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white">
+            <span className="flex h-4.5 min-w-4.5 shrink-0 items-center justify-center rounded-full bg-brand-500 px-1 text-[10px] font-bold text-white">
               {c.unreadCount}
             </span>
           ) : null}
@@ -787,21 +824,21 @@ function PostRow({ p, active, onClick }: { p: Post; active: boolean; onClick: ()
   return (
     <button
       onClick={onClick}
-      className={`flex w-full items-start gap-3 border-b border-neutral-100 px-4 py-3 text-left transition ${
-        active ? "bg-brand-50" : "hover:bg-neutral-50"
+      className={`flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-all ${
+        active ? "bg-white/[0.12]" : "hover:bg-white/[0.06]"
       }`}
     >
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-xl">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/[0.08] text-lg">
         {pl.emoji}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-medium text-neutral-500">{pl.label}</span>
-          <span className="shrink-0 text-xs text-neutral-400">{relativeTime(getPostTime(p))}</span>
+          <span className="text-[11px] font-medium text-sidebar-muted">{pl.label}</span>
+          <span className="shrink-0 text-[11px] text-sidebar-muted">{relativeTime(getPostTime(p))}</span>
         </div>
-        <p className="mt-0.5 line-clamp-2 text-sm text-neutral-800">{caption || "No caption"}</p>
+        <p className="mt-0.5 line-clamp-2 text-xs text-slate-300">{caption || "No caption"}</p>
         {commentCount !== undefined && (
-          <span className="mt-0.5 block text-xs text-neutral-400">💬 {commentCount} comments</span>
+          <span className="mt-0.5 block text-[11px] text-sidebar-muted">💬 {commentCount}</span>
         )}
       </div>
     </button>
@@ -814,14 +851,14 @@ function MessageBubble({ m }: { m: Message }) {
   return (
     <div className={`flex ${outgoing ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[78%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${
+        className={`max-w-[78%] rounded-2xl px-4 py-2.5 text-sm ${
           outgoing
-            ? "rounded-br-md bg-brand-600 text-white"
-            : "rounded-bl-md bg-white text-neutral-800"
+            ? "rounded-br-md bg-gradient-to-br from-brand-600 to-brand-500 text-white shadow-md shadow-brand-500/20"
+            : "rounded-bl-md bg-white text-gray-800 shadow-sm ring-1 ring-gray-100"
         }`}
       >
         {!outgoing && m.senderName && (
-          <div className="mb-1 text-xs font-medium text-neutral-500">{m.senderName}</div>
+          <div className="mb-1 text-xs font-semibold text-brand-600">{m.senderName}</div>
         )}
         {hasText && <div className="whitespace-pre-wrap break-words">{m.message}</div>}
         {m.attachments?.map((a, i) => (
@@ -832,7 +869,7 @@ function MessageBubble({ m }: { m: Message }) {
             ) : (
               <span
                 className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs ${
-                  outgoing ? "bg-white/20" : "bg-neutral-100 text-neutral-600"
+                  outgoing ? "bg-white/20" : "bg-gray-100 text-gray-600"
                 }`}
               >
                 📎 {a.filename || a.type}
@@ -841,7 +878,7 @@ function MessageBubble({ m }: { m: Message }) {
           </div>
         ))}
         <div
-          className={`mt-1 text-right text-[10px] ${outgoing ? "text-white/70" : "text-neutral-400"}`}
+          className={`mt-1 text-right text-[10px] ${outgoing ? "text-white/60" : "text-gray-400"}`}
         >
           {clockTime(m.createdAt)}
           {outgoing && m.deliveryStatus ? ` · ${m.deliveryStatus}` : ""}
@@ -858,18 +895,18 @@ function CommentBubble({ c, onReply }: { c: Comment; onReply: () => void }) {
   return (
     <div className={`group flex flex-col gap-0.5 ${outgoing ? "items-end" : "items-start"}`}>
       {!outgoing && sender && (
-        <span className="ml-1 text-xs font-medium text-neutral-500">{sender}</span>
+        <span className="ml-1 text-xs font-semibold text-brand-600">{sender}</span>
       )}
       <div
-        className={`max-w-[78%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${
+        className={`max-w-[78%] rounded-2xl px-4 py-2.5 text-sm ${
           outgoing
-            ? "rounded-br-md bg-brand-600 text-white"
-            : "rounded-bl-md bg-white text-neutral-800"
+            ? "rounded-br-md bg-gradient-to-br from-brand-600 to-brand-500 text-white shadow-md shadow-brand-500/20"
+            : "rounded-bl-md bg-white text-gray-800 shadow-sm ring-1 ring-gray-100"
         }`}
       >
         <div className="whitespace-pre-wrap break-words">{text || "—"}</div>
         <div
-          className={`mt-1 text-right text-[10px] ${outgoing ? "text-white/70" : "text-neutral-400"}`}
+          className={`mt-1 text-right text-[10px] ${outgoing ? "text-white/60" : "text-gray-400"}`}
         >
           {clockTime(c.createdAt)}
         </div>
@@ -877,7 +914,7 @@ function CommentBubble({ c, onReply }: { c: Comment; onReply: () => void }) {
       {!outgoing && (
         <button
           onClick={onReply}
-          className="ml-1 text-xs text-neutral-400 opacity-0 transition-opacity group-hover:opacity-100 hover:text-brand-600"
+          className="ml-1 text-xs text-gray-400 opacity-0 transition-opacity group-hover:opacity-100 hover:text-brand-600"
         >
           ↩ Reply
         </button>
@@ -890,33 +927,33 @@ function NoSelection({ icon, hint }: { icon: string; hint: string }) {
   return (
     <div className="grid h-full place-items-center px-6 text-center">
       <div>
-        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-3xl shadow-sm">
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-100 to-brand-50 text-3xl shadow-lg shadow-brand-500/10">
           {icon}
         </div>
-        <h3 className="text-lg font-semibold text-neutral-800">Your unified inbox</h3>
-        <p className="mt-1 max-w-sm text-sm text-neutral-500">{hint}</p>
+        <h3 className="text-lg font-semibold text-gray-800">Your unified inbox</h3>
+        <p className="mt-1 max-w-sm text-sm text-gray-400">{hint}</p>
       </div>
     </div>
   );
 }
 
-function EmptyState({ hasAny, noun }: { hasAny: boolean; noun: string }) {
+function DarkEmptyState({ hasAny, noun }: { hasAny: boolean; noun: string }) {
   return (
-    <div className="p-6 text-center text-sm text-neutral-400">
+    <div className="p-6 text-center text-xs text-sidebar-muted">
       {hasAny ? `No ${noun} match your search.` : `No ${noun} yet.`}
     </div>
   );
 }
 
-function ListSkeleton() {
+function DarkListSkeleton() {
   return (
-    <div className="space-y-px">
+    <div className="space-y-px px-2 py-1">
       {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="flex items-start gap-3 px-4 py-3">
-          <div className="h-10 w-10 animate-pulse rounded-full bg-neutral-200" />
+        <div key={i} className="flex items-start gap-3 rounded-lg px-3 py-2.5">
+          <div className="h-9 w-9 rounded-full skeleton-dark" />
           <div className="flex-1 space-y-2 py-1">
-            <div className="h-3 w-2/3 animate-pulse rounded bg-neutral-200" />
-            <div className="h-3 w-1/2 animate-pulse rounded bg-neutral-100" />
+            <div className="h-3 w-2/3 rounded skeleton-dark" />
+            <div className="h-2.5 w-1/2 rounded skeleton-dark" />
           </div>
         </div>
       ))}
@@ -930,7 +967,7 @@ function ThreadSkeleton() {
       {Array.from({ length: 5 }).map((_, i) => (
         <div key={i} className={`flex ${i % 2 ? "justify-end" : "justify-start"}`}>
           <div
-            className={`h-10 animate-pulse rounded-2xl bg-neutral-200 ${i % 2 ? "w-40" : "w-56"}`}
+            className={`h-10 rounded-2xl skeleton ${i % 2 ? "w-40" : "w-56"}`}
           />
         </div>
       ))}
