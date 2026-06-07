@@ -59,7 +59,7 @@ async function getJSON<T>(url: string): Promise<T> {
 }
 
 // ── Post / comment field normalizers ─────────────────────────────────────────
-const getPostId = (p: Post) => (p._id ?? p.id ?? p.postId ?? "") as string;
+const getPostId = (p: Post) => (p.postId ?? p.id ?? p._id ?? "") as string;
 const getPostCaption = (p: Post) => p.caption ?? p.content ?? p.message ?? "";
 const getPostTime = (p: Post) => p.publishedAt ?? p.createdAt;
 const getCommentId = (c: Comment) => (c._id ?? c.id ?? "") as string;

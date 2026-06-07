@@ -38,7 +38,18 @@ export async function GET(req: Request) {
       page++;
     }
 
-    return NextResponse.json({ data: allPosts });
+    // Normalize: hoist accountId and platformPostId from the platforms array
+    // so the frontend can use them directly.
+    const normalized = (allPosts as Record<string, unknown>[]).map((p) => {
+      const plat = (p.platforms as Record<string, unknown>[] | undefined)?.[0];
+      return {
+        ...p,
+        accountId: p.accountId ?? plat?.accountId,
+        postId: p.postId ?? plat?.platformPostId,
+      };
+    });
+
+    return NextResponse.json({ data: normalized });
   } catch (e) {
     return errorResponse(e);
   }

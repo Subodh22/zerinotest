@@ -18,7 +18,21 @@ export async function GET(req: Request, { params }: Params) {
 
     const z = getClient();
     const res = await z.listPostComments(postId, { accountId, limit: 100 });
-    return NextResponse.json({ data: coerceArray(res) });
+    // Normalize: flatten `from` object and alias `createdTime` → `createdAt`.
+    const comments = (coerceArray(res) as Record<string, unknown>[]).map((c) => {
+      const from = c.from as Record<string, string> | string | undefined;
+      const senderName =
+        c.senderName ??
+        (typeof from === "object" && from !== null
+          ? from.name ?? from.username
+          : from);
+      return {
+        ...c,
+        senderName,
+        createdAt: c.createdAt ?? c.createdTime,
+      };
+    });
+    return NextResponse.json({ data: comments });
   } catch (e) {
     return errorResponse(e);
   }
