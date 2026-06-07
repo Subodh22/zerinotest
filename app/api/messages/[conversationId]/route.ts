@@ -3,6 +3,7 @@ import { coerceArray } from "@/src/zernio";
 import { getClient, errorResponse } from "@/lib/zernio-server";
 import { getGmailClient } from "@/lib/gmail-server";
 import { getSlackClient } from "@/lib/slack-server";
+import { getOutlookClient } from "@/lib/outlook-server";
 import { getHeader, getTextBody } from "@/src/gmail";
 import type { Message } from "@/lib/types";
 
@@ -85,6 +86,27 @@ export async function GET(req: Request, { params }: Params) {
       return NextResponse.json({ data: messages });
     }
 
+    // Outlook thread
+    if (conversationId.startsWith("outlook:")) {
+      const outlook = getOutlookClient();
+      if (!outlook) {
+        return NextResponse.json({ error: "Outlook not configured" }, { status: 500 });
+      }
+      const threadId = conversationId.replace("outlook:", "");
+      const thread = await outlook.listThreadMessages(threadId);
+      const messages: Message[] = thread.map((m) => ({
+        id: m.id,
+        message: m.body,
+        senderId: undefined,
+        senderName: m.fromMe ? null : m.fromName,
+        direction: m.fromMe ? "outgoing" : "incoming",
+        createdAt: m.receivedDateTime,
+        attachments: [],
+        deliveryStatus: null,
+      }));
+      return NextResponse.json({ data: messages });
+    }
+
     // Zernio thread
     const res = await z_listMessages(conversationId, accountId);
     return NextResponse.json({ data: res });
@@ -127,6 +149,17 @@ export async function POST(req: Request, { params }: Params) {
       }
       const channelId = conversationId.replace("slack:", "");
       const result = await slack.postMessage(channelId, body.message.trim());
+      return NextResponse.json({ ok: true, result });
+    }
+
+    // Outlook reply
+    if (conversationId.startsWith("outlook:")) {
+      const outlook = getOutlookClient();
+      if (!outlook) {
+        return NextResponse.json({ error: "Outlook not configured" }, { status: 500 });
+      }
+      const threadId = conversationId.replace("outlook:", "");
+      const result = await outlook.reply(threadId, body.message.trim());
       return NextResponse.json({ ok: true, result });
     }
 

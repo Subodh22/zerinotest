@@ -3,6 +3,7 @@ import { coerceArray } from "@/src/zernio";
 import { getClient, errorResponse } from "@/lib/zernio-server";
 import { getGmailClient } from "@/lib/gmail-server";
 import { getSlackClient } from "@/lib/slack-server";
+import { getOutlookClient } from "@/lib/outlook-server";
 import { getHeader } from "@/src/gmail";
 import type { GmailMessage } from "@/src/gmail";
 import type { Conversation } from "@/lib/types";
@@ -115,6 +116,33 @@ export async function GET(req: Request) {
           }
         } catch (slackErr) {
           console.error("Slack conversations error:", slackErr);
+        }
+      }
+    }
+
+    // Outlook threads (skip if filtering to a non-outlook platform)
+    if (!platform || platform === "outlook") {
+      const outlook = getOutlookClient();
+      if (outlook) {
+        try {
+          const profile = await outlook.getProfile();
+          const accountId = `outlook:${profile.emailAddress}`;
+          const convos = await outlook.listConversations(30);
+          for (const c of convos) {
+            results.push({
+              id: `outlook:${c.conversationId}`,
+              platform: "outlook",
+              accountId,
+              participantName: c.participantName,
+              lastMessage: c.subject,
+              updatedTime: c.updatedTime,
+              status: "active",
+              unreadCount: c.unread || null,
+              url: c.webLink,
+            });
+          }
+        } catch (outlookErr) {
+          console.error("Outlook conversations error:", outlookErr);
         }
       }
     }

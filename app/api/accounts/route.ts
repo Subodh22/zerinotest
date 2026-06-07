@@ -3,6 +3,7 @@ import { coerceArray } from "@/src/zernio";
 import { getClient, errorResponse } from "@/lib/zernio-server";
 import { getGmailClient } from "@/lib/gmail-server";
 import { getSlackClient } from "@/lib/slack-server";
+import { getOutlookClient } from "@/lib/outlook-server";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +48,22 @@ export async function GET() {
         });
       } catch {
         // Slack not ready — skip silently
+      }
+    }
+
+    // Add Outlook account if configured
+    const outlook = getOutlookClient();
+    if (outlook) {
+      try {
+        const profile = await outlook.getProfile();
+        accounts.push({
+          _id: `outlook:${profile.emailAddress}`,
+          platform: "outlook",
+          displayName: profile.emailAddress,
+          profilePicture: null,
+        });
+      } catch {
+        // Outlook not ready — skip silently
       }
     }
 

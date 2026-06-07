@@ -85,7 +85,6 @@ export default function Home() {
   const [sendingDm, setSendingDm] = useState(false);
   const [filter, setFilter] = useState("");
   const [platformFilter, setPlatformFilter] = useState<string | null>(null);
-  const [outlook, setOutlook] = useState<{ configured: boolean; connected: boolean } | null>(null);
 
   // ── Posts / comments state ────────────────────────────────────────────────
   const [posts, setPosts] = useState<Post[]>([]);
@@ -144,20 +143,6 @@ export default function Home() {
   useEffect(() => {
     const id = setInterval(() => refreshConversations.current(), 10_000);
     return () => clearInterval(id);
-  }, []);
-
-  // Outlook connection status + post-OAuth feedback.
-  useEffect(() => {
-    getJSON<{ configured: boolean; connected: boolean }>("/api/auth/outlook")
-      .then(setOutlook)
-      .catch(() => setOutlook(null));
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("outlook") === "error") {
-      setListError(`Outlook: ${params.get("reason") || "connection failed"}`);
-    }
-    if (params.get("outlook")) {
-      window.history.replaceState({}, "", window.location.pathname);
-    }
   }, []);
 
   // Lazy-load posts the first time the Posts tab is opened.
@@ -361,14 +346,6 @@ export default function Home() {
         </div>
 
         <div className="ml-auto flex items-center gap-2 text-xs">
-          {outlook?.configured && !outlook.connected && (
-            <a
-              href="/api/auth/outlook/login"
-              className="inline-flex items-center gap-1.5 rounded-full bg-blue-600 px-3 py-1 font-medium text-white transition hover:bg-blue-700"
-            >
-              ✉️ Connect Outlook
-            </a>
-          )}
           {overview && (
             <span className="rounded-full bg-brand-50 px-3 py-1 font-medium text-brand-700">
               {overview.publishedPosts ?? overview.totalPosts ?? 0} posts published
