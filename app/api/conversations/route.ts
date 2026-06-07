@@ -76,9 +76,9 @@ export async function GET(req: Request) {
         try {
           const auth = await slack.authTest();
           const accountId = `slack:${auth.team_id}`;
-          const convos = await slack.listConversations({ types: "im,mpim", limit: 30 });
+          const convos = await slack.listConversations({ types: "public_channel,private_channel,im,mpim", limit: 30 });
 
-          // Collect unique user IDs to resolve names
+          // Collect unique user IDs to resolve names for DMs
           const userIds = convos.channels
             .filter((ch) => ch.is_im && ch.user)
             .map((ch) => ch.user!);
@@ -86,7 +86,9 @@ export async function GET(req: Request) {
 
           for (const ch of convos.channels) {
             const user = ch.user ? users.get(ch.user) : null;
-            const participantName = user?.real_name ?? user?.profile.display_name ?? user?.name ?? ch.name ?? "Unknown";
+            const participantName = ch.is_im
+              ? (user?.real_name ?? user?.profile.display_name ?? user?.name ?? "Unknown")
+              : (ch.name ? `#${ch.name}` : "Unknown channel");
             const lastTs = ch.latest?.ts ? Number(ch.latest.ts) * 1000 : (ch.updated ?? 0) * 1000;
 
             results.push({
@@ -100,8 +102,8 @@ export async function GET(req: Request) {
               unreadCount: null,
             });
           }
-        } catch {
-          // Slack not ready — skip
+        } catch (slackErr) {
+          console.error("Slack conversations error:", slackErr);
         }
       }
     }
