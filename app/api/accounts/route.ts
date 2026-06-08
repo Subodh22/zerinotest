@@ -1,17 +1,21 @@
 import { NextResponse } from "next/server";
 import { coerceArray } from "@/src/zernio";
 import { getClient, errorResponse } from "@/lib/zernio-server";
-import { getGmailClient } from "@/lib/gmail-server";
-import { getSlackClient } from "@/lib/slack-server";
-import { getOutlookClient } from "@/lib/outlook-server";
+import {
+  requireUserId,
+  getGmailClientForUser,
+  getSlackClientForUser,
+  getOutlookClientForUser,
+  AuthRequiredError,
+} from "@/lib/user-accounts";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
+    const userId = await requireUserId();
     const z = getClient();
     const raw = coerceArray(await z.listAccounts()) as Record<string, unknown>[];
-    // Only send the browser what the UI needs — not emails, tokens, or profile blobs.
     const accounts = raw.map((a) => ({
       _id: a._id ?? a.id ?? a.accountId,
       platform: a.platform,
@@ -19,8 +23,8 @@ export async function GET() {
       profilePicture: a.profilePicture ?? null,
     }));
 
-    // Add Gmail account if configured
-    const gmail = getGmailClient();
+    // Add Gmail account if user has connected it
+    const gmail = await getGmailClientForUser(userId);
     if (gmail) {
       try {
         const profile = await gmail.getProfile();
@@ -35,8 +39,8 @@ export async function GET() {
       }
     }
 
-    // Add Slack account if configured
-    const slack = getSlackClient();
+    // Add Slack account if user has connected it
+    const slack = await getSlackClientForUser(userId);
     if (slack) {
       try {
         const auth = await slack.authTest();
@@ -51,8 +55,8 @@ export async function GET() {
       }
     }
 
-    // Add Outlook account if configured
-    const outlook = getOutlookClient();
+    // Add Outlook account if user has connected it
+    const outlook = await getOutlookClientForUser(userId);
     if (outlook) {
       try {
         const profile = await outlook.getProfile();
@@ -69,6 +73,9 @@ export async function GET() {
 
     return NextResponse.json({ accounts });
   } catch (e) {
+    if (e instanceof AuthRequiredError) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
     return errorResponse(e);
   }
 }

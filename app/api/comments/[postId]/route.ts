@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { coerceArray } from "@/src/zernio";
 import { getClient, errorResponse } from "@/lib/zernio-server";
+import { requireUserId, AuthRequiredError } from "@/lib/user-accounts";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,7 @@ type Params = { params: Promise<{ postId: string }> };
 // GET /api/comments/{postId}?accountId=...  — fetch comments on a post
 export async function GET(req: Request, { params }: Params) {
   try {
+    await requireUserId();
     const { postId } = await params;
     const { searchParams } = new URL(req.url);
     const accountId = searchParams.get("accountId");
@@ -18,7 +20,6 @@ export async function GET(req: Request, { params }: Params) {
 
     const z = getClient();
     const res = await z.listPostComments(postId, { accountId, limit: 100 });
-    // Normalize: flatten `from` object and alias `createdTime` → `createdAt`.
     const comments = (coerceArray(res) as Record<string, unknown>[]).map((c) => {
       const from = c.from as Record<string, string> | string | undefined;
       const senderName =
@@ -34,6 +35,9 @@ export async function GET(req: Request, { params }: Params) {
     });
     return NextResponse.json({ data: comments });
   } catch (e) {
+    if (e instanceof AuthRequiredError) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
     return errorResponse(e);
   }
 }
@@ -41,6 +45,7 @@ export async function GET(req: Request, { params }: Params) {
 // POST /api/comments/{postId}  body: { accountId, message, commentId? }  — reply to a comment
 export async function POST(req: Request, { params }: Params) {
   try {
+    await requireUserId();
     const { postId } = await params;
     const body = (await req.json()) as {
       accountId?: string;
@@ -60,6 +65,9 @@ export async function POST(req: Request, { params }: Params) {
     );
     return NextResponse.json({ ok: true, result });
   } catch (e) {
+    if (e instanceof AuthRequiredError) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
     return errorResponse(e);
   }
 }

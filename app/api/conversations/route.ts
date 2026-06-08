@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { coerceArray } from "@/src/zernio";
 import { getClient, errorResponse } from "@/lib/zernio-server";
-import { getGmailClient } from "@/lib/gmail-server";
-import { getSlackClient } from "@/lib/slack-server";
-import { getOutlookClient } from "@/lib/outlook-server";
+import {
+  requireUserId,
+  getGmailClientForUser,
+  getSlackClientForUser,
+  getOutlookClientForUser,
+  AuthRequiredError,
+} from "@/lib/user-accounts";
 import { getHeader } from "@/src/gmail";
 import type { GmailMessage } from "@/src/gmail";
 import type { Conversation } from "@/lib/types";
@@ -15,6 +19,7 @@ type Platform = "facebook" | "instagram" | "twitter" | "bluesky" | "reddit" | "t
 // Unified conversation list, merged and sorted across every connected source.
 export async function GET(req: Request) {
   try {
+    const userId = await requireUserId();
     const { searchParams } = new URL(req.url);
     const platform = searchParams.get("platform");
 
@@ -33,9 +38,9 @@ export async function GET(req: Request) {
       meta = res?.meta ?? null;
     }
 
-    // Gmail threads (skip if filtering to a non-google platform)
+    // Gmail threads
     if (!platform || platform === "google") {
-      const gmail = getGmailClient();
+      const gmail = await getGmailClientForUser(userId);
       if (gmail) {
         try {
           const profile = await gmail.getProfile();
@@ -75,9 +80,9 @@ export async function GET(req: Request) {
       }
     }
 
-    // Slack DMs (skip if filtering to a non-slack platform)
+    // Slack DMs
     if (!platform || platform === "slack") {
-      const slack = getSlackClient();
+      const slack = await getSlackClientForUser(userId);
       if (slack) {
         try {
           const auth = await slack.authTest();
@@ -120,9 +125,9 @@ export async function GET(req: Request) {
       }
     }
 
-    // Outlook threads (skip if filtering to a non-outlook platform)
+    // Outlook threads
     if (!platform || platform === "outlook") {
-      const outlook = getOutlookClient();
+      const outlook = await getOutlookClientForUser(userId);
       if (outlook) {
         try {
           const profile = await outlook.getProfile();
@@ -156,6 +161,9 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ data: results, meta });
   } catch (e) {
+    if (e instanceof AuthRequiredError) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
     return errorResponse(e);
   }
 }

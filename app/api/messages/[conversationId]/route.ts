@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { coerceArray } from "@/src/zernio";
 import { getClient, errorResponse } from "@/lib/zernio-server";
-import { getGmailClient } from "@/lib/gmail-server";
-import { getSlackClient } from "@/lib/slack-server";
-import { getOutlookClient } from "@/lib/outlook-server";
+import {
+  requireUserId,
+  getGmailClientForUser,
+  getSlackClientForUser,
+  getOutlookClientForUser,
+  AuthRequiredError,
+} from "@/lib/user-accounts";
 import { getHeader, getTextBody } from "@/src/gmail";
 import type { Message } from "@/lib/types";
 
@@ -14,6 +18,7 @@ type Params = { params: Promise<{ conversationId: string }> };
 // GET /api/messages/{conversationId}?accountId=...  — read a thread
 export async function GET(req: Request, { params }: Params) {
   try {
+    const userId = await requireUserId();
     const { conversationId } = await params;
     const { searchParams } = new URL(req.url);
     const accountId = searchParams.get("accountId");
@@ -23,7 +28,7 @@ export async function GET(req: Request, { params }: Params) {
 
     // Gmail thread
     if (conversationId.startsWith("gmail:")) {
-      const gmail = getGmailClient();
+      const gmail = await getGmailClientForUser(userId);
       if (!gmail) {
         return NextResponse.json({ error: "Gmail not configured" }, { status: 500 });
       }
@@ -53,7 +58,7 @@ export async function GET(req: Request, { params }: Params) {
 
     // Slack thread
     if (conversationId.startsWith("slack:")) {
-      const slack = getSlackClient();
+      const slack = await getSlackClientForUser(userId);
       if (!slack) {
         return NextResponse.json({ error: "Slack not configured" }, { status: 500 });
       }
@@ -61,13 +66,12 @@ export async function GET(req: Request, { params }: Params) {
       const auth = await slack.authTest();
       const history = await slack.conversationHistory(channelId, { limit: 100 });
 
-      // Resolve user names
       const userIds = [...new Set(history.messages.filter((m) => m.user).map((m) => m.user!))];
       const users = await slack.usersInfo(userIds);
 
       const messages: Message[] = history.messages
-        .filter((m) => !m.subtype) // skip system messages
-        .reverse() // oldest first
+        .filter((m) => !m.subtype)
+        .reverse()
         .map((m) => {
           const isOutgoing = m.user === auth.user_id;
           const user = m.user ? users.get(m.user) : null;
@@ -88,7 +92,7 @@ export async function GET(req: Request, { params }: Params) {
 
     // Outlook thread
     if (conversationId.startsWith("outlook:")) {
-      const outlook = getOutlookClient();
+      const outlook = await getOutlookClientForUser(userId);
       if (!outlook) {
         return NextResponse.json({ error: "Outlook not configured" }, { status: 500 });
       }
@@ -111,6 +115,9 @@ export async function GET(req: Request, { params }: Params) {
     const res = await z_listMessages(conversationId, accountId);
     return NextResponse.json({ data: res });
   } catch (e) {
+    if (e instanceof AuthRequiredError) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
     return errorResponse(e);
   }
 }
@@ -118,6 +125,7 @@ export async function GET(req: Request, { params }: Params) {
 // POST /api/messages/{conversationId}  body: { accountId, message }  — send a reply
 export async function POST(req: Request, { params }: Params) {
   try {
+    const userId = await requireUserId();
     const { conversationId } = await params;
     const body = (await req.json()) as { accountId?: string; message?: string };
     if (!body.accountId || !body.message?.trim()) {
@@ -126,7 +134,7 @@ export async function POST(req: Request, { params }: Params) {
 
     // Gmail reply
     if (conversationId.startsWith("gmail:")) {
-      const gmail = getGmailClient();
+      const gmail = await getGmailClientForUser(userId);
       if (!gmail) {
         return NextResponse.json({ error: "Gmail not configured" }, { status: 500 });
       }
@@ -143,7 +151,7 @@ export async function POST(req: Request, { params }: Params) {
 
     // Slack reply
     if (conversationId.startsWith("slack:")) {
-      const slack = getSlackClient();
+      const slack = await getSlackClientForUser(userId);
       if (!slack) {
         return NextResponse.json({ error: "Slack not configured" }, { status: 500 });
       }
@@ -154,7 +162,7 @@ export async function POST(req: Request, { params }: Params) {
 
     // Outlook reply
     if (conversationId.startsWith("outlook:")) {
-      const outlook = getOutlookClient();
+      const outlook = await getOutlookClientForUser(userId);
       if (!outlook) {
         return NextResponse.json({ error: "Outlook not configured" }, { status: 500 });
       }
@@ -168,13 +176,15 @@ export async function POST(req: Request, { params }: Params) {
     const result = await z.sendMessage(conversationId, body.accountId, body.message.trim());
     return NextResponse.json({ ok: true, result });
   } catch (e) {
+    if (e instanceof AuthRequiredError) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
     return errorResponse(e);
   }
 }
 
 async function z_listMessages(conversationId: string, accountId: string): Promise<unknown[]> {
   const z = getClient();
-  // Oldest-first so the thread reads top-to-bottom like a chat.
   const res = await z.listMessages(conversationId, { accountId, limit: 100, sortOrder: "asc" });
   return coerceArray(res);
 }

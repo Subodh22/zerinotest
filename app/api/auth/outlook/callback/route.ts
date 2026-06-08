@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { exchangeCode } from "@/src/outlook";
+import { requireUserId, upsertAccount } from "@/lib/user-accounts";
+import { OutlookClient } from "@/src/outlook";
 
 export const dynamic = "force-dynamic";
 
 /**
  * GET /api/auth/outlook/callback — OAuth callback.
- * Exchanges the authorization code for tokens and displays the refresh token
- * so it can be added to Vercel env vars (or .env locally).
+ * Exchanges the code for tokens and stores the refresh token in the DB for the
+ * logged-in user, then redirects back to the settings page.
  */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -21,25 +23,27 @@ export async function GET(req: Request) {
   }
 
   try {
+    const userId = await requireUserId();
     const origin = new URL(req.url).origin;
     const redirectUri = `${origin}/api/auth/outlook/callback`;
     const tokens = await exchangeCode(code, redirectUri);
 
-    const refreshToken =
-      tokens.refresh_token ??
-      "Not returned — ensure the 'offline_access' scope is granted and retry";
+    if (!tokens.refresh_token) {
+      return NextResponse.json(
+        { error: "No refresh token returned — ensure offline_access scope is granted" },
+        { status: 400 },
+      );
+    }
 
-    return new NextResponse(
-      `<html><body style="font-family:system-ui;padding:3rem;max-width:640px;margin:0 auto">
-        <h2 style="color:#16a34a">Outlook connected ✓</h2>
-        <p>Copy the refresh token below and add it as <code>MS_REFRESH_TOKEN</code> in your Vercel project settings (or <code>.env</code> locally), then redeploy.</p>
-        <label style="font-weight:600;display:block;margin-top:1.5rem">Refresh Token:</label>
-        <textarea id="rt" readonly onclick="this.select()" style="width:100%;height:80px;font-family:monospace;font-size:13px;padding:0.75rem;border:1px solid #d4d4d4;border-radius:8px;background:#fafafa;margin-top:0.5rem">${refreshToken}</textarea>
-        <button onclick="navigator.clipboard.writeText(document.getElementById('rt').value)" style="margin-top:0.75rem;padding:0.5rem 1.25rem;background:#2563eb;color:#fff;border:none;border-radius:6px;font-weight:600;cursor:pointer">Copy to clipboard</button>
-        <p style="margin-top:1.5rem;font-size:14px;color:#737373">After setting the env var and redeploying, visit <a href="/">the inbox</a> to see Outlook threads.</p>
-      </body></html>`,
-      { headers: { "Content-Type": "text/html" } },
-    );
+    // Get the email address to use as a label
+    const clientId = process.env.MS_CLIENT_ID!;
+    const clientSecret = process.env.MS_CLIENT_SECRET!;
+    const outlook = new OutlookClient(clientId, clientSecret, tokens.refresh_token);
+    const profile = await outlook.getProfile();
+
+    await upsertAccount(userId, "outlook", tokens.refresh_token, profile.emailAddress);
+
+    return NextResponse.redirect(new URL("/settings", origin));
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }

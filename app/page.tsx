@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { UserButton } from "@clerk/nextjs";
 import type {
   Account,
   AnalyticsOverview,
@@ -371,7 +372,7 @@ export default function Home() {
           })}
         </div>
 
-        <div className="ml-auto flex items-center gap-2 text-xs">
+        <div className="ml-auto flex items-center gap-3 text-xs">
           {overview && (
             <span className="rounded-full bg-brand-50 px-3 py-1 font-medium text-brand-700">
               {overview.publishedPosts ?? overview.totalPosts ?? 0} posts published
@@ -382,6 +383,13 @@ export default function Home() {
               {totalUnread} unread
             </span>
           )}
+          <a
+            href="/settings"
+            className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50"
+          >
+            Settings
+          </a>
+          <UserButton />
         </div>
       </header>
 
